@@ -1,0 +1,16 @@
+go north
+go east
+go south
+go west
+put tomato on counter
+put lettuce on counter
+open blue door
+take tomato
+take blue key
+take lettuce
+unlock blue door with blue key
+drop tomato
+drop blue key
+drop lettuce
+look
+

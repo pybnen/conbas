@@ -1,0 +1,51 @@
+go east
+go west
+go north
+go south
+lock blue door with blue key
+unlock blue door with blue key
+open blue door
+open fridge
+close blue door
+close fridge
+take lettuce from fridge
+take lettuce from counter
+take lettuce from table
+take tomato from fridge
+take tomato from counter
+take tomato from table
+take parsley from fridge
+take parsley from counter
+take parsley from table
+take blue key from fridge
+take blue key from counter
+take blue key from table
+take knife from fridge
+take knife from counter
+take knife from table
+take lettuce
+drop lettuce
+take tomato
+drop tomato
+take parsley
+drop parsley
+take blue key
+drop blue key
+take knife
+drop knife
+insert lettuce into fridge
+put lettuce on counter
+put lettuce on table
+insert tomato into fridge
+put tomato on counter
+put tomato on table
+insert parsley into fridge
+put parsley on counter
+put parsley on table
+insert blue key into fridge
+put blue key on counter
+put blue key on table
+insert knife into fridge
+put knife on counter
+put knife on table
+look

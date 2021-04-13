@@ -1,0 +1,9 @@
+go east
+go north
+go south
+go west
+take lettuce
+drop lettuce
+put lettuce on counter
+look
+

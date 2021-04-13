@@ -1,0 +1,284 @@
+go east
+go west
+go north
+go south
+lock blue door with blue key
+lock red door with red key
+lock container with chest key
+unlock blue door with blue key
+unlock red door with red key
+unlock container with chest key
+open blue door
+open red door
+open container
+open fridge
+close blue door
+close red door
+close container
+close fridge
+take lettuce from fridge
+take lettuce from container
+take lettuce from counter
+take lettuce from patio chair
+take lettuce from sofa
+take lettuce from stove
+take lettuce from table
+take lettuce from patio table
+take lettuce from shelf
+take lettuce from workbench
+take lettuce from showcase
+take green apple from fridge
+take green apple from container
+take green apple from counter
+take green apple from patio chair
+take green apple from sofa
+take green apple from stove
+take green apple from table
+take green apple from patio table
+take green apple from shelf
+take green apple from workbench
+take green apple from showcase
+take tomato from fridge
+take tomato from container
+take tomato from counter
+take tomato from patio chair
+take tomato from sofa
+take tomato from stove
+take tomato from table
+take tomato from patio table
+take tomato from shelf
+take tomato from workbench
+take tomato from showcase
+take parsley from fridge
+take parsley from container
+take parsley from counter
+take parsley from patio chair
+take parsley from sofa
+take parsley from stove
+take parsley from table
+take parsley from patio table
+take parsley from shelf
+take parsley from workbench
+take parsley from showcase
+take banana from fridge
+take banana from container
+take banana from counter
+take banana from patio chair
+take banana from sofa
+take banana from stove
+take banana from table
+take banana from patio table
+take banana from shelf
+take banana from workbench
+take banana from showcase
+take red key from fridge
+take red key from container
+take red key from counter
+take red key from patio chair
+take red key from sofa
+take red key from stove
+take red key from table
+take red key from patio table
+take red key from shelf
+take red key from workbench
+take red key from showcase
+take blue key from fridge
+take blue key from container
+take blue key from counter
+take blue key from patio chair
+take blue key from sofa
+take blue key from stove
+take blue key from table
+take blue key from patio table
+take blue key from shelf
+take blue key from workbench
+take blue key from showcase
+take chest key from fridge
+take chest key from container
+take chest key from counter
+take chest key from patio chair
+take chest key from sofa
+take chest key from stove
+take chest key from table
+take chest key from patio table
+take chest key from shelf
+take chest key from workbench
+take chest key from showcase
+take knife from fridge
+take knife from container
+take knife from counter
+take knife from patio chair
+take knife from sofa
+take knife from stove
+take knife from table
+take knife from patio table
+take knife from shelf
+take knife from workbench
+take knife from showcase
+take red apple from fridge
+take red apple from container
+take red apple from counter
+take red apple from patio chair
+take red apple from sofa
+take red apple from stove
+take red apple from table
+take red apple from patio table
+take red apple from shelf
+take red apple from workbench
+take red apple from showcase
+take green hot pepper from fridge
+take green hot pepper from container
+take green hot pepper from counter
+take green hot pepper from patio chair
+take green hot pepper from sofa
+take green hot pepper from stove
+take green hot pepper from table
+take green hot pepper from patio table
+take green hot pepper from shelf
+take green hot pepper from workbench
+take green hot pepper from showcase
+take lettuce
+drop lettuce
+take green apple
+drop green apple
+take tomato
+drop tomato
+take parsley
+drop parsley
+take banana
+drop banana
+take red key
+drop red key
+take blue key
+drop blue key
+take chest key
+drop chest key
+take knife
+drop knife
+take red apple
+drop red apple
+take green hot pepper
+drop green hot pepper
+insert lettuce into fridge
+insert lettuce into container
+put lettuce on counter
+put lettuce on patio chair
+put lettuce on sofa
+put lettuce on stove
+put lettuce on table
+put lettuce on patio table
+put lettuce on shelf
+put lettuce on workbench
+put lettuce on showcase
+insert green apple into fridge
+insert green apple into container
+put green apple on counter
+put green apple on patio chair
+put green apple on sofa
+put green apple on stove
+put green apple on table
+put green apple on patio table
+put green apple on shelf
+put green apple on workbench
+put green apple on showcase
+insert tomato into fridge
+insert tomato into container
+put tomato on counter
+put tomato on patio chair
+put tomato on sofa
+put tomato on stove
+put tomato on table
+put tomato on patio table
+put tomato on shelf
+put tomato on workbench
+put tomato on showcase
+insert parsley into fridge
+insert parsley into container
+put parsley on counter
+put parsley on patio chair
+put parsley on sofa
+put parsley on stove
+put parsley on table
+put parsley on patio table
+put parsley on shelf
+put parsley on workbench
+put parsley on showcase
+insert banana into fridge
+insert banana into container
+put banana on counter
+put banana on patio chair
+put banana on sofa
+put banana on stove
+put banana on table
+put banana on patio table
+put banana on shelf
+put banana on workbench
+put banana on showcase
+insert red key into fridge
+insert red key into container
+put red key on counter
+put red key on patio chair
+put red key on sofa
+put red key on stove
+put red key on table
+put red key on patio table
+put red key on shelf
+put red key on workbench
+put red key on showcase
+insert blue key into fridge
+insert blue key into container
+put blue key on counter
+put blue key on patio chair
+put blue key on sofa
+put blue key on stove
+put blue key on table
+put blue key on patio table
+put blue key on shelf
+put blue key on workbench
+put blue key on showcase
+insert chest key into fridge
+insert chest key into container
+put chest key on counter
+put chest key on patio chair
+put chest key on sofa
+put chest key on stove
+put chest key on table
+put chest key on patio table
+put chest key on shelf
+put chest key on workbench
+put chest key on showcase
+insert knife into fridge
+insert knife into container
+put knife on counter
+put knife on patio chair
+put knife on sofa
+put knife on stove
+put knife on table
+put knife on patio table
+put knife on shelf
+put knife on workbench
+put knife on showcase
+insert red apple into fridge
+insert red apple into container
+put red apple on counter
+put red apple on patio chair
+put red apple on sofa
+put red apple on stove
+put red apple on table
+put red apple on patio table
+put red apple on shelf
+put red apple on workbench
+put red apple on showcase
+insert green hot pepper into fridge
+insert green hot pepper into container
+put green hot pepper on counter
+put green hot pepper on patio chair
+put green hot pepper on sofa
+put green hot pepper on stove
+put green hot pepper on table
+put green hot pepper on patio table
+put green hot pepper on shelf
+put green hot pepper on workbench
+put green hot pepper on showcase
+look
+
