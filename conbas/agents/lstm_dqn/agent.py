@@ -288,7 +288,6 @@ class LstmDqnAgent:
 
                     _, _, next_input_ids = self.extract_input(obs, infos)
 
-                    # TODO calculate reward from score
                     for i, (input_id, command_index, reward, next_input_id, done) \
                             in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
 
