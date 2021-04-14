@@ -11,11 +11,11 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn.utils.clip_grad import clip_grad_norm_
-from torch.distributions.categorical import Categorical
 
 from textworld import EnvInfos
 
 from model import LstmDqnModel
+from policy import LinearAnnealedEpsGreedyQPolicy
 from my_utils import preprocess, words_to_ids
 
 
@@ -108,47 +108,18 @@ class PrioritizedReplayMemory:
         return len(self.alpha_memory) + len(self.beta_memory)
 
 
-class Policy:
-    def select_command(self, *kwargs):
-        raise NotImplementedError
-
-
-class EpsGreedyQPolicy(Policy):
-    def __init__(self, eps) -> None:
-        self.eps = eps
-
-    def select_command(self, q_values: torch.Tensor) -> torch.Tensor:
-        batch_size, n_commands = q_values.size()
-
-        rand_num = torch.rand((batch_size, ))
-        less_than_eps = (rand_num < self.eps).to(dtype=torch.int64)
-
-        _, argmax_q_values = q_values.max(dim=1)
-        rand_command_indices = torch.randint(0, n_commands, (batch_size, ))
-
-        # not sure if this is faster than torch.where
-        command_indices = less_than_eps * rand_command_indices + \
-            (1 - less_than_eps) * argmax_q_values
-        return command_indices
-
-
-class SoftmaxPolicy(Policy):
-    def select_command(self, q_values: torch.Tensor) -> torch.Tensor:
-        distribution = Categorical(logits=q_values.detach().cpu())
-        command_indices = distribution.sample()
-        return command_indices
-
-
 class LstmDqnAgent:
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         self.commands = commands
         self.config = config
         self.prev_commands = []
         self.word_vocab = word_vocab
-        self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
         self.dqn_lstm = LstmDqnModel(self.config["model"], commands, word_vocab)
         self.dqn_lstm_target = LstmDqnModel(self.config["model"], commands, word_vocab)
         # TODO init weights of dqn lstm model
+
+        # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
+        self.policy = LinearAnnealedEpsGreedyQPolicy(**self.config["general"]["linear_anneald_args"])
 
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
@@ -264,56 +235,58 @@ class LstmDqnAgent:
 
         for epoch_no in range(1, n_epochs + 1):
             stats = {"scores": [], "steps": []}
-            for _ in tqdm(range(batches_per_epoch)):
-                self.dqn_lstm.train()
-                obs, infos = env.reset()
-                self.init(obs, infos)
+            with tqdm(range(batches_per_epoch))as pbar:
+                for _ in pbar:
+                    self.dqn_lstm.train()
+                    obs, infos = env.reset()
+                    self.init(obs, infos)
 
-                scores = np.array([0] * len(obs))
-                dones = [False] * len(obs)
-                not_or_recently_dones = [True] * len(obs)
-                steps = [0] * len(obs)
+                    scores = np.array([0] * len(obs))
+                    dones = [False] * len(obs)
+                    not_or_recently_dones = [True] * len(obs)
+                    steps = [0] * len(obs)
 
-                while not all(dones):
-                    steps = [step + int(not done)
-                             for step, done in zip(steps, dones)]
+                    while not all(dones):
+                        steps = [step + int(not done)
+                                 for step, done in zip(steps, dones)]
 
-                    commands, command_indices, input_ids = self.act(obs, infos)
+                        commands, command_indices, input_ids = self.act(obs, infos)
 
-                    old_scores = scores
-                    obs, scores, dones, infos = env.step(commands)
+                        old_scores = scores
+                        obs, scores, dones, infos = env.step(commands)
 
-                    # calculate immediate reward from scores
-                    rewards = np.array(scores) - old_scores
+                        # calculate immediate reward from scores
+                        rewards = np.array(scores) - old_scores
 
-                    _, _, next_input_ids = self.extract_input(obs, infos)
+                        _, _, next_input_ids = self.extract_input(obs, infos)
 
-                    for i, (input_id, command_index, reward, next_input_id, done) \
-                            in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
+                        for i, (input_id, command_index, reward, next_input_id, done) \
+                                in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
 
-                        # only append transitions from not done or just recently done episodes
-                        if not_or_recently_dones[i]:
-                            if done:
-                                not_or_recently_dones[i] = False
+                            # only append transitions from not done or just recently done episodes
+                            if not_or_recently_dones[i]:
+                                if done:
+                                    not_or_recently_dones[i] = False
 
-                            replay_memory.append(
-                                Transition(input_id, command_index, reward, next_input_id, done))
+                                replay_memory.append(
+                                    Transition(input_id, command_index, reward, next_input_id, done))
 
-                    if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
-                        loss = self.update(discount, replay_memory, mse)
-                        optimizer.zero_grad()
-                        # TODO check what retrain_graph param does
-                        loss.backward(retain_graph=False)
-                        clip_grad_norm_(self.dqn_lstm.parameters(), clip_grad_norm)
-                        optimizer.step()
+                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
+                            loss = self.update(discount, replay_memory, mse)
+                            optimizer.zero_grad()
+                            # TODO check what retrain_graph param doespbar
+                            loss.backward(retain_graph=False)
+                            clip_grad_norm_(self.dqn_lstm.parameters(), clip_grad_norm)
+                            optimizer.step()
 
-                        self.update_target_model(tau)
+                            self.update_target_model(tau)
 
-                # Let the agent knows the game is done.
-                self.act(obs, infos)
+                    # Let the agent knows the game is done.
+                    self.act(obs, infos)
 
-                stats["scores"].extend(scores)
-                stats["steps"].extend(steps)
+                    pbar.set_postfix({"eps": self.policy.eps})
+                    stats["scores"].extend(scores)
+                    stats["steps"].extend(steps)
 
             mean_score = sum(stats["scores"]) / len(stats["scores"])
             mean_steps = sum(stats["steps"]) / len(stats["steps"])
@@ -331,7 +304,6 @@ class LstmDqnAgent:
         # found here: https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
         # and explained in more detail here: https://stackoverflow.com/questions/19339/transpose-unzip-function-inverse-of-zip/19343#19343
         batch = TransitionBatch(*zip(*transitions))  # type: ignore
-        # observations, command_indices, rewards, next_observations, dones = zip(*transitions)
 
         # create tensors for update
         input_tensor, input_lengths = self.pad_input_ids(batch.observation)

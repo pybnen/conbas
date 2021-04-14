@@ -11,7 +11,11 @@ config = {
             # "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_3.txt",
         ],
         "vocab_file": "conbas/agents/lstm_dqn/vocab.txt",
-        "eps": 0.9
+        "linear_anneald_args": {
+            "start_eps": 1.0,
+            "end_eps": 0.05,
+            "duration": 500_000
+        }
     },
     "training": {
         "replay_batch_size": 16,
