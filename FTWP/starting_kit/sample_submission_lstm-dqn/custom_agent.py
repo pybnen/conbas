@@ -150,7 +150,7 @@ class CustomAgent:
         self.update_per_k_game_steps = self.config['general']['update_per_k_game_steps']
         self.clip_grad_norm = self.config['training']['optimizer']['clip_grad_norm']
 
-        self.nlp = spacy.load('en', disable=['ner', 'parser', 'tagger'])
+        self.nlp = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
         self.preposition_map = {"take": "from",
                                 "chop": "with",
                                 "slice": "with",

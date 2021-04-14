@@ -15,7 +15,7 @@ AVAILABLE_INFORMATION = EnvInfos(
     description=True, inventory=True,
     max_score=True, objective=True, entities=True, verbs=True,
     command_templates=True, admissible_commands=True,
-    has_won=True, has_lost=True,
+    won=True, lost=True,
     extras=["recipe"]
 )
 
@@ -37,10 +37,12 @@ def train(game_files):
     requested_infos = agent.select_additional_infos()
     _validate_requested_infos(requested_infos)
 
-    env_id = textworld.gym.register_games(game_files, requested_infos,
+    env_id = textworld.gym.register_games(game_files,
+                                          requested_infos,
+                                          batch_size=agent.batch_size,
+                                          asynchronous=True, auto_reset=False,
                                           max_episode_steps=agent.max_nb_steps_per_episode,
                                           name="training")
-    env_id = textworld.gym.make_batch(env_id, batch_size=agent.batch_size, parallel=True)
     env = gym.make(env_id)
 
     for epoch_no in range(1, agent.nb_epochs + 1):
