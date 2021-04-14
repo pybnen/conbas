@@ -108,12 +108,44 @@ class PrioritizedReplayMemory:
         return len(self.alpha_memory) + len(self.beta_memory)
 
 
+class Policy:
+    def select_command(self, *kwargs):
+        raise NotImplementedError
+
+
+class EpsGreedyQPolicy(Policy):
+    def __init__(self, eps) -> None:
+        self.eps = eps
+
+    def select_command(self, q_values: torch.Tensor) -> torch.Tensor:
+        batch_size, n_commands = q_values.size()
+
+        rand_num = torch.rand((batch_size, ))
+        less_than_eps = (rand_num < self.eps).to(dtype=torch.int64)
+
+        _, argmax_q_values = q_values.max(dim=1)
+        rand_command_indices = torch.randint(0, n_commands, (batch_size, ))
+
+        # not sure if this is faster than torch.where
+        command_indices = less_than_eps * rand_command_indices + \
+            (1 - less_than_eps) * argmax_q_values
+        return command_indices
+
+
+class SoftmaxPolicy(Policy):
+    def select_command(self, q_values: torch.Tensor) -> torch.Tensor:
+        distribution = Categorical(logits=q_values.detach().cpu())
+        command_indices = distribution.sample()
+        return command_indices
+
+
 class LstmDqnAgent:
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         self.commands = commands
         self.config = config
         self.prev_commands = []
         self.word_vocab = word_vocab
+        self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
         self.dqn_lstm = LstmDqnModel(self.config["model"], commands, word_vocab)
         self.dqn_lstm_target = LstmDqnModel(self.config["model"], commands, word_vocab)
         # TODO init weights of dqn lstm model
@@ -193,17 +225,13 @@ class LstmDqnAgent:
         return self.dqn_lstm.command_scorer(state_representations)
 
     def act(self, obs: List[str], infos: Dict[str, List[Any]]
-            ) -> Tuple[List[str], torch.LongTensor, List[List[int]]]:
+            ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
         input_tensor, input_lengths, input_ids = self.extract_input(obs, infos)
 
-        # state_representations = self.dqn_lstm.representation_generator(game_step_info, sequence_lengths)
-        # command_logits = self.dqn_lstm.command_scorer(state_representations)
-        command_logits = self.q_values(input_tensor, input_lengths, self.dqn_lstm)
+        q_values = self.q_values(input_tensor, input_lengths, self.dqn_lstm)
 
-        # TODO use epsilon greedy to get commands
-        # TODO maybe add policy like bolszman or eps greedy
-        distribution = Categorical(logits=command_logits.detach().cpu())
-        command_indices = distribution.sample()
+        # command selection
+        command_indices = self.policy.select_command(q_values)
 
         commands = [self.commands[i] for i in command_indices]
         self.prev_commands = commands
