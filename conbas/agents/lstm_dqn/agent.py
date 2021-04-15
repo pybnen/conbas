@@ -2,6 +2,7 @@ from typing import NamedTuple, Optional, List, Dict, Any, Tuple, Callable
 import math
 import random
 from pathlib import Path
+from collections import deque
 
 import spacy
 from tqdm import tqdm
@@ -232,12 +233,8 @@ class LstmDqnAgent:
         self.update_target_model(tau=1.0)
 
     def train(self, env, train_config) -> None:
-        n_epochs = train_config["n_epochs"]
         n_episodes = train_config["n_episodes"]
         batch_size = train_config["batch_size"]
-
-        episodes_per_epoch = int(math.ceil(n_episodes / n_epochs))
-        batches_per_epoch = int(math.ceil(episodes_per_epoch / batch_size))
 
         update_after = train_config["update_after"]
         tau = train_config["soft_update_tau"]
@@ -257,66 +254,75 @@ class LstmDqnAgent:
                             self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
-        for epoch_no in range(1, n_epochs + 1):
-            stats = {"scores": [], "steps": []}
-            with tqdm(range(batches_per_epoch))as pbar:
-                for _ in pbar:
-                    self.lstm_dqn.train()
-                    obs, infos = env.reset()
-                    self.init(obs, infos)
+        maxlen = 150
+        mov_scores = deque(maxlen=maxlen)
+        mov_steps = deque(maxlen=maxlen)
+        mov_losses = deque(maxlen=maxlen)
 
-                    scores = np.array([0] * len(obs))
-                    dones = [False] * len(obs)
-                    not_or_recently_dones = [True] * len(obs)
-                    steps = [0] * len(obs)
+        n_batches = int(math.ceil(n_episodes / batch_size))
+        with tqdm(range(n_batches))as pbar:
+            for _ in pbar:
+                self.lstm_dqn.train()
+                obs, infos = env.reset()
+                self.init(obs, infos)
 
-                    while not all(dones):
-                        steps = [step + int(not done)
-                                 for step, done in zip(steps, dones)]
+                scores = np.array([0] * len(obs))
+                dones = [False] * len(obs)
+                not_or_recently_dones = [True] * len(obs)
+                steps = [0] * len(obs)
 
-                        commands, command_indices, input_ids = self.act(obs, infos)
+                while not all(dones):
+                    steps = [step + int(not done)
+                             for step, done in zip(steps, dones)]
 
-                        old_scores = scores
-                        obs, scores, dones, infos = env.step(commands)
+                    commands, command_indices, input_ids = self.act(obs, infos)
 
-                        # calculate immediate reward from scores
-                        rewards = np.array(scores) - old_scores
+                    old_scores = scores
+                    obs, scores, dones, infos = env.step(commands)
 
-                        _, _, next_input_ids = self.extract_input(obs, infos)
+                    # calculate immediate reward from scores
+                    rewards = np.array(scores) - old_scores
 
-                        for i, (input_id, command_index, reward, next_input_id, done) \
-                                in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
+                    _, _, next_input_ids = self.extract_input(obs, infos)
 
-                            # only append transitions from not done or just recently done episodes
-                            if not_or_recently_dones[i]:
-                                if done:
-                                    not_or_recently_dones[i] = False
+                    for i, (input_id, command_index, reward, next_input_id, done) \
+                            in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
 
-                                replay_memory.append(
-                                    Transition(input_id, command_index, reward, next_input_id, done))
+                        # only append transitions from not done or just recently done episodes
+                        if not_or_recently_dones[i]:
+                            if done:
+                                not_or_recently_dones[i] = False
 
-                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
-                            loss = self.update(discount, replay_memory, mse)
-                            optimizer.zero_grad()
-                            # TODO check what retrain_graph param does
-                            loss.backward(retain_graph=False)
-                            clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
-                            optimizer.step()
+                            replay_memory.append(
+                                Transition(input_id, command_index, reward, next_input_id, done))
 
-                            self.update_target_model(tau)
+                    if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
+                        loss = self.update(discount, replay_memory, mse)
+                        optimizer.zero_grad()
+                        # TODO check what retrain_graph param does
+                        loss.backward(retain_graph=False)
+                        clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
+                        optimizer.step()
 
-                    # TODO do i really need this?
-                    # Let the agent knows the game is done.
-                    self.act(obs, infos)
+                        self.update_target_model(tau)
 
-                    pbar.set_postfix({"eps": self.policy.eps})
-                    stats["scores"].extend(scores)
-                    stats["steps"].extend(steps)
+                        mov_losses.append(loss.detach().item())
 
-            mean_score = sum(stats["scores"]) / len(stats["scores"])
-            mean_steps = sum(stats["steps"]) / len(stats["steps"])
-            print("Epoch: {:3d} | {:2.1f} pts | {:4.1f} steps".format(
-                epoch_no, mean_score, mean_steps))
+                # TODO do i really need this?
+                # Let the agent knows the game is done.
+                self.act(obs, infos)
+
+                mov_scores.extend(scores)
+                mov_steps.extend(steps)
+
+                pbar.set_postfix({
+                    "eps": self.policy.eps,
+                    "score": np.mean(mov_scores),
+                    "steps": np.mean(mov_steps),
+                    "loss": np.mean(mov_losses)})
+
+        # TODO Add timer
+        print("Done")
 
     def update(self,
                discount: float,

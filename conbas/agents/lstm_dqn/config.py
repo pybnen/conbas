@@ -14,17 +14,17 @@ config = {
         "linear_anneald_args": {
             "start_eps": 1.0,
             "end_eps": 0.05,
-            "duration": 40_000
+            "duration": 12_000
         }
     },
     "training": {
+        "n_episodes": 16_000,
+        "batch_size": 16,
+        "max_steps_per_episode": 50,
+
         "replay_batch_size": 16,
         "replay_capacity": 30_000,
         "update_after": 100,
-        "n_episodes": 16_000,
-        "n_epochs": 100,
-        "batch_size": 16,
-        "max_steps_per_episode": 50,
         "soft_update_tau": 0.001,
         "discount": 0.99,
         "optimizer": {
