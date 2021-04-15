@@ -11,7 +11,6 @@ class LstmDqnModel(nn.Module):
         super().__init__()
 
         self.config = config
-        # convert the word id to an embedding
         self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
         self.representation_rnn = nn.GRU(config["embedding_size"], config["hidden_size"])
         # TODO maybe add relu
