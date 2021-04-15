@@ -2,7 +2,6 @@ from typing import List, Dict, Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -15,11 +14,18 @@ class LstmDqnModel(nn.Module):
         # convert the word id to an embedding
         self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
         self.representation_rnn = nn.GRU(config["embedding_size"], config["hidden_size"])
+        # TODO maybe add relu
         self.command_scorer_linear = nn.Linear(config["hidden_size"], len(commands))
+        self.init_weights()
+
+    def init_weights(self):
+        # TODO actually not quite sure how to initialize GRU
+        nn.init.xavier_uniform_(self.command_scorer_linear.weight.data)
+        self.command_scorer_linear.bias.data.fill_(0)
 
     def representation_generator(self, game_step_info: torch.Tensor, sequence_lengths: torch.Tensor) -> torch.Tensor:
         """TODO
-        
+
         Args:
             game_step_info: tensor of size (max_len, batch_size)
             sequence_lengths: list of sequences lengths of each batch element

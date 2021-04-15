@@ -9,4 +9,5 @@
     "python.analysis.extraPaths": ["./conbas", "./conbas/agents/lstm_dqn"],
     "python.analysis.typeCheckingMode": "basic",
     "pythonIndent.trimLinesWithOnlyWhitespace": true,
+    "python.linting.pylintEnabled": false,
 }

@@ -1,6 +1,7 @@
 from typing import NamedTuple, Optional, List, Dict, Any, Tuple, Callable
 import math
 import random
+from pathlib import Path
 
 import spacy
 from tqdm import tqdm
@@ -109,23 +110,31 @@ class PrioritizedReplayMemory:
 
 
 class LstmDqnAgent:
+    MODEL_CKPT_SUBFOLDER: str = "saved_models"
+
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         self.commands = commands
         self.config = config
         self.prev_commands = []
         self.word_vocab = word_vocab
-        self.dqn_lstm = LstmDqnModel(self.config["model"], commands, word_vocab)
-        self.dqn_lstm_target = LstmDqnModel(self.config["model"], commands, word_vocab)
-        # TODO init weights of dqn lstm model
+        # TODO maybe do this in train method / also handly on exist (i.e. should be overwritten?)
+        self.experiment_path = Path(config["checkpoint"]["experiments_path"]) / config["checkpoint"]["experiment_tag"]
+        self.experiment_path.mkdir(parents=True, exist_ok=True)
 
-        # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
-        self.policy = LinearAnnealedEpsGreedyQPolicy(**self.config["general"]["linear_anneald_args"])
+        self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab)
+        self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab)
+
+        # TODO this would be the place to load a pretrained model
 
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
-        # self.dqn_lstm_target.load_state_dict(self.dqn_lstm.state_dict())
-        for target_parameter, parameter in zip(self.dqn_lstm_target.parameters(), self.dqn_lstm.parameters()):
+
+        # self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())
+        for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             assert torch.allclose(target_parameter.data, parameter.data)
+
+        # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
+        self.policy = LinearAnnealedEpsGreedyQPolicy(**self.config["general"]["linear_anneald_args"])
 
         self.tokenizer = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
 
@@ -191,15 +200,15 @@ class LstmDqnAgent:
         input_tensor, input_lengths = self.pad_input_ids(input_ids)
         return input_tensor, input_lengths, input_ids
 
-    def q_values(self, input_tensor, input_lengths, dqn_lstm):
-        state_representations = dqn_lstm.representation_generator(input_tensor, input_lengths)
-        return self.dqn_lstm.command_scorer(state_representations)
+    def q_values(self, input_tensor, input_lengths, lstm_dqn):
+        state_representations = lstm_dqn.representation_generator(input_tensor, input_lengths)
+        return self.lstm_dqn.command_scorer(state_representations)
 
     def act(self, obs: List[str], infos: Dict[str, List[Any]]
             ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
         input_tensor, input_lengths, input_ids = self.extract_input(obs, infos)
 
-        q_values = self.q_values(input_tensor, input_lengths, self.dqn_lstm)
+        q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn)
 
         # command selection
         command_indices = self.policy.select_command(q_values)
@@ -208,6 +217,19 @@ class LstmDqnAgent:
         self.prev_commands = commands
 
         return commands, command_indices.detach(), input_ids
+
+    def save_state_dict(self) -> None:
+        ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+        torch.save(self.lstm_dqn.state_dict(), ckpt_dir / "model_weights.pt")
+
+    def load_state_dict(self, load_from) -> None:
+        state_dict = torch.load(load_from)
+        self.lstm_dqn.load_state_dict(state_dict)
+        # TODO do i have to do this?
+        # copy parameter from model to target model
+        self.update_target_model(tau=1.0)
 
     def train(self, env, train_config) -> None:
         n_epochs = train_config["n_epochs"]
@@ -221,6 +243,8 @@ class LstmDqnAgent:
         tau = train_config["soft_update_tau"]
         discount = train_config["discount"]
 
+        # save_fequency = self.config["checkpoint"]["save_frequency"]
+
         # TODO maybe use huber loss (= smooth_l1_loss)
         mse = nn.MSELoss(reduction="mean")
 
@@ -230,14 +254,14 @@ class LstmDqnAgent:
         clip_grad_norm = train_config["optimizer"]["clip_grad_norm"]
 
         parameters = filter(lambda p: p.requires_grad,
-                            self.dqn_lstm.parameters())
+                            self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
         for epoch_no in range(1, n_epochs + 1):
             stats = {"scores": [], "steps": []}
             with tqdm(range(batches_per_epoch))as pbar:
                 for _ in pbar:
-                    self.dqn_lstm.train()
+                    self.lstm_dqn.train()
                     obs, infos = env.reset()
                     self.init(obs, infos)
 
@@ -274,13 +298,14 @@ class LstmDqnAgent:
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
                             loss = self.update(discount, replay_memory, mse)
                             optimizer.zero_grad()
-                            # TODO check what retrain_graph param doespbar
+                            # TODO check what retrain_graph param does
                             loss.backward(retain_graph=False)
-                            clip_grad_norm_(self.dqn_lstm.parameters(), clip_grad_norm)
+                            clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
                             optimizer.step()
 
                             self.update_target_model(tau)
 
+                    # TODO do i really need this?
                     # Let the agent knows the game is done.
                     self.act(obs, infos)
 
@@ -313,13 +338,13 @@ class LstmDqnAgent:
         non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32)
 
         # q_values from policy network, Q(obs, a, phi)
-        q_values = self.q_values(input_tensor, input_lengths, self.dqn_lstm).gather(
+        q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(
             dim=1, index=command_indices.unsqueeze(-1)).squeeze(-1)
 
         # argmax_a Q(next_obs, a, phi)
-        _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.dqn_lstm).max(dim=1)
+        _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
         # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
-        next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.dqn_lstm_target).gather(
+        next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
             dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
         # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
         target = rewards + non_terminal_mask * discount * next_q_values.detach()
@@ -329,11 +354,11 @@ class LstmDqnAgent:
         return loss
 
     def update_target_model(self, tau):
-        for target_parameter, parameter in zip(self.dqn_lstm_target.parameters(), self.dqn_lstm.parameters()):
+        for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             target_parameter.data.copy_(tau * parameter.data + (1.0 - tau) * target_parameter.data)
 
     # def hard_update_target_model(self):
     #     self.target_net_update_freq = 10
     #     self.update_count = (self.update_count + 1) % self.target_net_update_freq
     #     if self.update_count == 0:
-    #         self.dqn_lstm_target.load_state_dict(self.dqn_lstm.state_dict())
+    #         self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())

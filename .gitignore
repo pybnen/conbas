@@ -285,6 +285,9 @@ $RECYCLE.BIN/
 # ignore datasets
 data/*
 
+# ignore experiments
+experiments/*
+
 # still want settings.json in repo
 !.vscode/settings.json
 

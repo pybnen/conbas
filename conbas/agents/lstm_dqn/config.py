@@ -14,7 +14,7 @@ config = {
         "linear_anneald_args": {
             "start_eps": 1.0,
             "end_eps": 0.05,
-            "duration": 500_000
+            "duration": 40_000
         }
     },
     "training": {
@@ -35,5 +35,10 @@ config = {
     "model": {
         "embedding_size": 4,
         "hidden_size": 4
+    },
+    "checkpoint": {
+        "experiments_path": "experiments/",
+        "experiment_tag": "lstm_dqn",
+        "save_frequency": 100,
     }
 }
