@@ -45,7 +45,7 @@ class LstmDqnModel(nn.Module):
 
     def command_scorer(self, state_representation):
         """TODO
-        
+
         Args:
             state_representation: TODO
 
