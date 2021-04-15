@@ -288,9 +288,6 @@ data/*
 # ignore experiments
 experiments/*
 
-# still want settings.json in repo
-!.vscode/settings.json
-
 ### these ignores will most likely be deleted,
 ### once agents/tests are implemented properly,
 ### but for now I want to keep the files just locally
