@@ -39,6 +39,6 @@ config = {
     "checkpoint": {
         "experiments_path": "experiments/",
         "experiment_tag": "lstm_dqn",
-        "save_frequency": 100,
+        "save_frequency": 10,
     }
 }

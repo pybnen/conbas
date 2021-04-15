@@ -3,6 +3,7 @@ import math
 import random
 from pathlib import Path
 from collections import deque
+import time
 
 import spacy
 from tqdm import tqdm
@@ -219,11 +220,11 @@ class LstmDqnAgent:
 
         return commands, command_indices.detach(), input_ids
 
-    def save_state_dict(self) -> None:
+    def save_state_dict(self, filename: str) -> None:
         ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        torch.save(self.lstm_dqn.state_dict(), ckpt_dir / "model_weights.pt")
+        torch.save(self.lstm_dqn.state_dict(), ckpt_dir / filename)
 
     def load_state_dict(self, load_from) -> None:
         state_dict = torch.load(load_from)
@@ -233,14 +234,14 @@ class LstmDqnAgent:
         self.update_target_model(tau=1.0)
 
     def train(self, env, train_config) -> None:
+        # TODO save config and stuff to experiment folder, like git-commit version, or all files?
+        # or you know like ah tensorboard?
         n_episodes = train_config["n_episodes"]
         batch_size = train_config["batch_size"]
 
         update_after = train_config["update_after"]
         tau = train_config["soft_update_tau"]
         discount = train_config["discount"]
-
-        # save_fequency = self.config["checkpoint"]["save_frequency"]
 
         # TODO maybe use huber loss (= smooth_l1_loss)
         mse = nn.MSELoss(reduction="mean")
@@ -254,75 +255,81 @@ class LstmDqnAgent:
                             self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
-        maxlen = 150
+        maxlen = 1000
         mov_scores = deque(maxlen=maxlen)
         mov_steps = deque(maxlen=maxlen)
         mov_losses = deque(maxlen=maxlen)
 
+        start_time = time.time()
+        save_frequency = self.config["checkpoint"]["save_frequency"]
         n_batches = int(math.ceil(n_episodes / batch_size))
-        with tqdm(range(n_batches))as pbar:
-            for _ in pbar:
-                self.lstm_dqn.train()
-                obs, infos = env.reset()
-                self.init(obs, infos)
 
-                scores = np.array([0] * len(obs))
-                dones = [False] * len(obs)
-                not_or_recently_dones = [True] * len(obs)
-                steps = [0] * len(obs)
+        try:
+            with tqdm(range(1, n_batches + 1)) as pbar:
+                for batch_num in pbar:
+                    self.lstm_dqn.train()
+                    obs, infos = env.reset()
+                    self.init(obs, infos)
 
-                while not all(dones):
-                    steps = [step + int(not done)
-                             for step, done in zip(steps, dones)]
+                    scores = np.array([0] * len(obs))
+                    dones = [False] * len(obs)
+                    not_or_recently_dones = [True] * len(obs)
+                    steps = [0] * len(obs)
 
-                    commands, command_indices, input_ids = self.act(obs, infos)
+                    while not all(dones):
+                        steps = [step + int(not done)
+                                 for step, done in zip(steps, dones)]
 
-                    old_scores = scores
-                    obs, scores, dones, infos = env.step(commands)
+                        commands, command_indices, input_ids = self.act(obs, infos)
 
-                    # calculate immediate reward from scores
-                    rewards = np.array(scores) - old_scores
+                        old_scores = scores
+                        obs, scores, dones, infos = env.step(commands)
 
-                    _, _, next_input_ids = self.extract_input(obs, infos)
+                        # calculate immediate reward from scores
+                        rewards = np.array(scores) - old_scores
 
-                    for i, (input_id, command_index, reward, next_input_id, done) \
-                            in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
+                        _, _, next_input_ids = self.extract_input(obs, infos)
 
-                        # only append transitions from not done or just recently done episodes
-                        if not_or_recently_dones[i]:
-                            if done:
-                                not_or_recently_dones[i] = False
+                        for i, (input_id, command_index, reward, next_input_id, done) \
+                                in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
 
-                            replay_memory.append(
-                                Transition(input_id, command_index, reward, next_input_id, done))
+                            # only append transitions from not done or just recently done episodes
+                            if not_or_recently_dones[i]:
+                                if done:
+                                    not_or_recently_dones[i] = False
 
-                    if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
-                        loss = self.update(discount, replay_memory, mse)
-                        optimizer.zero_grad()
-                        # TODO check what retrain_graph param does
-                        loss.backward(retain_graph=False)
-                        clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
-                        optimizer.step()
+                                replay_memory.append(
+                                    Transition(input_id, command_index, reward, next_input_id, done))
 
-                        self.update_target_model(tau)
+                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
+                            loss = self.update(discount, replay_memory, mse)
+                            optimizer.zero_grad()
+                            # TODO check what retrain_graph param does
+                            loss.backward(retain_graph=False)
+                            clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
+                            optimizer.step()
 
-                        mov_losses.append(loss.detach().item())
+                            self.update_target_model(tau)
 
-                # TODO do i really need this?
-                # Let the agent knows the game is done.
-                self.act(obs, infos)
+                            mov_losses.append(loss.detach().item())
 
-                mov_scores.extend(scores)
-                mov_steps.extend(steps)
+                    mov_scores.extend(scores)
+                    mov_steps.extend(steps)
 
-                pbar.set_postfix({
-                    "eps": self.policy.eps,
-                    "score": np.mean(mov_scores),
-                    "steps": np.mean(mov_steps),
-                    "loss": np.mean(mov_losses)})
+                    avg_score = np.mean(mov_scores)
 
-        # TODO Add timer
-        print("Done")
+                    if batch_num % save_frequency == 0:
+                        self.save_state_dict("model_weights_{}.pt".format(batch_num * batch_size))
+
+                    pbar.set_postfix({
+                        "eps": self.policy.eps,
+                        "score": avg_score,
+                        "steps": np.mean(mov_steps),
+                        "loss": np.mean(mov_losses)})
+        except KeyboardInterrupt:
+            print("Keyboard Interrupt")
+
+        print("Done, execution time: {}sec.".format(time.time() - start_time))
 
     def update(self,
                discount: float,
