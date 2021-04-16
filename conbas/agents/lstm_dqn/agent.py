@@ -119,7 +119,7 @@ class LstmDqnAgent:
         self.config = config
         self.prev_commands = []
         self.word_vocab = word_vocab
-        # TODO maybe do this in train method / also handly on exist (i.e. should be overwritten?)
+        # TODO maybe do this in train method / also handle on exist (i.e. should be overwritten?)
         self.experiment_path = Path(config["checkpoint"]["experiments_path"]) / config["checkpoint"]["experiment_tag"]
         self.experiment_path.mkdir(parents=True, exist_ok=True)
 
@@ -229,7 +229,6 @@ class LstmDqnAgent:
     def load_state_dict(self, load_from) -> None:
         state_dict = torch.load(load_from)
         self.lstm_dqn.load_state_dict(state_dict)
-        # TODO do i have to do this?
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 

@@ -12,30 +12,49 @@ class LstmDqnModel(nn.Module):
 
         self.config = config
         self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
-        self.representation_rnn = nn.GRU(config["embedding_size"], config["hidden_size"])
-        # TODO maybe add relu
-        self.command_scorer_linear = nn.Linear(config["hidden_size"], len(commands))
+        # TODO support bi-directional rnn
+        self.representation_rnn = nn.GRU(**config["representation_rnn"])
+
+        linear_layer_hiddens = config["command_scorer_net"] + [len(commands)]
+        command_scorer_layers = []
+        for i in range(len(config["command_scorer_net"])):
+            input_size = linear_layer_hiddens[i]
+            output_size = linear_layer_hiddens[i+1]
+            command_scorer_layers.append(nn.Linear(input_size, output_size))
+            command_scorer_layers.append(nn.ReLU())
+        self.command_scorer_net = nn.Sequential(*command_scorer_layers[:-1])  # skip last relu layer
+
         self.init_weights()
 
-    def init_weights(self):
+    def init_weights(self) -> None:
+        """Initialize the weights of the model"""
         # TODO actually not quite sure how to initialize GRU
-        nn.init.xavier_uniform_(self.command_scorer_linear.weight.data)
-        self.command_scorer_linear.bias.data.fill_(0)
 
-    def representation_generator(self, game_step_info: torch.Tensor, sequence_lengths: torch.Tensor) -> torch.Tensor:
-        """TODO
+        for layer in self.command_scorer_net:
+            if type(layer) == nn.Linear:
+                nn.init.xavier_uniform_(layer.weight.data)  # type: ignore
+                layer.bias.data.fill_(0)  # type: ignore
+
+    def representation_generator(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor) -> torch.Tensor:
+        """Generates a state representation based on input observation.
+
+        Input is a padded list of state information (sequences), an RNN is used to create features of the sequences.
+        The state representation is the mean of these features.
 
         Args:
-            game_step_info: tensor of size (max_len, batch_size)
-            sequence_lengths: list of sequences lengths of each batch element
+            input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
+                for each game in the batch.
+                max_len: maximum length of game information
+                batch_size: number of games in batch
+            input_lengths: tensor of shape (batch_size) containing the length of each input sequence
 
         Returns:
-            TODO
+            state_representation: tensor of shape (batch_size, )
         """
-        embed = self.embedding(game_step_info)
-        packed = pack_padded_sequence(embed, sequence_lengths, enforce_sorted=False)
+        embed = self.embedding(input_tensor)
+        packed = pack_padded_sequence(embed, input_lengths, enforce_sorted=False)
 
-        hidden = torch.zeros(1, len(sequence_lengths), self.config["hidden_size"])
+        hidden = torch.zeros(1, len(input_lengths), self.config["hidden_size"])
         output_packed, hidden = self.representation_rnn(packed, hidden)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
@@ -43,14 +62,15 @@ class LstmDqnModel(nn.Module):
         state_representation = output_padded.sum(dim=0) / output_lengths.float().unsqueeze(dim=1)
         return state_representation
 
-    def command_scorer(self, state_representation):
-        """TODO
+    def command_scorer(self, state_representation: torch.Tensor) -> torch.Tensor:
+        """Calculates a score for each available command, based on the given state representation.
 
         Args:
-            state_representation: TODO
+            state_representation: tensor of shape (batch_size, )
 
         Returns:
-            TODO
+            command_scores: tensor fo shape (batch_size, n_commands) for each state a list
+                containing the scores of each command in that state
         """
-        output = self.command_scorer_linear(state_representation)
-        return output
+        command_scores = self.command_scorer_net(state_representation)
+        return command_scores
