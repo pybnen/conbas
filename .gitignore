@@ -294,9 +294,9 @@ experiments/*
 conbas/agents/my_agent.py
 conbas/agents/simple_agent.py
 conbas/training/*
-conbas/core.py
+conbas/core_.py
 conbas/main.py
-conbas/utils.py
+conbas/utils_.py
 
 notebooks/*
 
