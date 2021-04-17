@@ -5,7 +5,7 @@ import textworld
 import textworld.gym
 
 from config import config
-from agent import LstmDqnAgent, ReplayMemory, Transition
+from agent import LstmDqnAgent
 
 
 def get_commands(commands_files: List[str]) -> List[str]:

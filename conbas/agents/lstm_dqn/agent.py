@@ -14,6 +14,7 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
+import gym
 from textworld import EnvInfos
 
 from model import LstmDqnModel
@@ -57,6 +58,10 @@ class LstmDqnAgent:
 
     @ staticmethod
     def request_infos() -> Optional[EnvInfos]:
+        """Request the infos the agent expects from the environment
+
+        Returns:
+            request_infos: EnvInfos"""
         request_infos = EnvInfos()
         request_infos.description = True
         request_infos.inventory = True
@@ -67,9 +72,24 @@ class LstmDqnAgent:
         return request_infos
 
     def init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
+        """Init some properties for a new episodes
+
+        Args:
+            obs: List that contains the current observation (=feedback) for each game
+            infos: additional (step) information for each game
+        """
         self.prev_commands = ["" for _ in range(len(obs))]
 
     def pad_input_ids(self, input_ids: List[List[int]]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Pad a list of sequences, the sequence contains ids that are the input for the agent
+
+        Args:
+            input_ids: list of sequences containing the ids that describe the input
+
+        Returns:
+            input_tensor: padded tensor of input ids
+            input_lengths: lenght of each unpadded sequence
+        """
         input_tensor_list = [torch.tensor(item) for item in input_ids]
         input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"])
         input_lengths = torch.tensor([len(seq) for seq in input_tensor_list])
@@ -113,12 +133,34 @@ class LstmDqnAgent:
         input_tensor, input_lengths = self.pad_input_ids(input_ids)
         return input_tensor, input_lengths, input_ids
 
-    def q_values(self, input_tensor, input_lengths, lstm_dqn):
+    def q_values(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor, lstm_dqn: LstmDqnModel) -> torch.Tensor:
+        """Calculate Q values for all commands for the current input
+
+        Args:
+            input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
+            input_lengths: tensor of shape (batch_size) containing the length of each input sequence
+            lstm_dqn: LstmDqnModel to calculate q value
+
+        Returns:
+            command_scores: tensor fo shape (batch_size, n_commands) for each state a list
+                containing the scores of each command in that state
+        """
         state_representations = lstm_dqn.representation_generator(input_tensor, input_lengths)
         return self.lstm_dqn.command_scorer(state_representations)
 
     def act(self, obs: List[str], infos: Dict[str, List[Any]]
             ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
+        """Returns command for the current observation and information from the environment.
+
+        Args:
+            obs: List that contains the current observation (=feedback) for each game
+            infos: additional (step) information for each game
+
+        Returns:
+            commands: List of commands, one command per game in the batch
+            command_indices: tensor of shape (batch_size, ), contains the command index for each state
+            input_ids: list of sequences containing the ids that describe the input
+        """
         input_tensor, input_lengths, input_ids = self.extract_input(obs, infos)
 
         q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn)
@@ -132,18 +174,34 @@ class LstmDqnAgent:
         return commands, command_indices.detach(), input_ids
 
     def save_state_dict(self, filename: str) -> None:
+        """Save state dict to experiment path.
+
+        Args:
+            filename: the name of the file
+        """
         ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         torch.save(self.lstm_dqn.state_dict(), ckpt_dir / filename)
 
     def load_state_dict(self, load_from) -> None:
+        """Load state dict.
+
+        Args:
+            load_from: path to state dict file
+        """
         state_dict = torch.load(load_from)
         self.lstm_dqn.load_state_dict(state_dict)
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 
-    def train(self, env, train_config) -> None:
+    def train(self, env: gym.Env, train_config: Dict[str, Any]) -> None:
+        """Train the model on the given environment.
+
+        Args:
+            env: game envrionment, can contain multiple games, that will be played in batches
+            train_config: configs for traning
+        """
         # TODO save config and stuff to experiment folder, like git-commit version, or all files?
         # or you know like ah tensorboard?
         n_episodes = train_config["n_episodes"]
@@ -245,6 +303,17 @@ class LstmDqnAgent:
                discount: float,
                replay_memory: Memory,
                loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]) -> torch.Tensor:
+        """Prepares one update step.
+
+        Samples transition batch from replay memory, and calculates loss.
+
+        Args:
+            discount: gamma
+            replay_memory: contains transition history
+            loss_fn: used to calculate loss
+        Returns:
+            loss: loss of the transition batch
+        """
         transitions = replay_memory.sample()
 
         # This is a neat trick to convert a batch transitions into one
@@ -276,7 +345,12 @@ class LstmDqnAgent:
 
         return loss
 
-    def update_target_model(self, tau):
+    def update_target_model(self, tau: float):
+        """Performs soft update of target network
+
+        Args:
+            tau: dictates how much the target network is updated with the policy network
+        """
         for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             target_parameter.data.copy_(tau * parameter.data + (1.0 - tau) * target_parameter.data)
 
