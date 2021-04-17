@@ -54,7 +54,7 @@ class LstmDqnModel(nn.Module):
         embed = self.embedding(input_tensor)
         packed = pack_padded_sequence(embed, input_lengths, enforce_sorted=False)
 
-        hidden = torch.zeros(1, len(input_lengths), self.config["hidden_size"])
+        hidden = torch.zeros(1, len(input_lengths), self.config["representation_rnn"]["hidden_size"])
         output_packed, hidden = self.representation_rnn(packed, hidden)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
