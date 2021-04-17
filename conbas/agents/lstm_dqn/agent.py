@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 from collections import deque
 import time
+import shutil
 
 import spacy
 from tqdm import tqdm
@@ -25,20 +26,20 @@ from core import Memory, ReplayMemory, Transition, TransitionBatch
 
 class LstmDqnAgent:
     MODEL_CKPT_SUBFOLDER: str = "saved_models"
+    ON_EXIST_IGNORE = "ignore"
+    ON_EXIST_DELETE = "delete"
+    ON_EXIST_ERR = "err"
 
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         self.commands = commands
         self.config = config
         self.prev_commands = []
         self.word_vocab = word_vocab
-        # TODO maybe do this in train method / also handle on exist (i.e. should be overwritten?)
-        self.experiment_path = Path(config["checkpoint"]["experiments_path"]) / config["checkpoint"]["experiment_tag"]
-        self.experiment_path.mkdir(parents=True, exist_ok=True)
-
+        self.experiment_path = None
         self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab)
         self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab)
 
-        # TODO this would be the place to load a pretrained model
+        # NOTE: This would be the place to load a pretrained model
 
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
@@ -179,10 +180,13 @@ class LstmDqnAgent:
         Args:
             filename: the name of the file
         """
-        ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
-        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        if self.experiment_path is not None:
+            ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-        torch.save(self.lstm_dqn.state_dict(), ckpt_dir / filename)
+            torch.save(self.lstm_dqn.state_dict(), ckpt_dir / filename)
+        else:
+            print("Experiment path not defined, make sure to call .train(env, train_config) before.")
 
     def load_state_dict(self, load_from) -> None:
         """Load state dict.
@@ -195,6 +199,25 @@ class LstmDqnAgent:
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 
+    def _setup_experiment_path(self, ckpt_config: Dict[str, Any]) -> None:
+        """Create directory for experiment.
+
+        Args:
+            ckpt_config: checkpoint configurations
+        """
+        self.experiment_path = Path(
+            ckpt_config["experiments_path"]) / ckpt_config["experiment_tag"]
+
+        on_exist = ckpt_config["on_exist"]
+        if on_exist == self.ON_EXIST_IGNORE:
+            self.experiment_path.mkdir(parents=True, exist_ok=True)
+        elif on_exist == self.ON_EXIST_ERR:
+            self.experiment_path.mkdir(parents=True, exist_ok=False)
+        elif on_exist == self.ON_EXIST_DELETE:
+            if self.experiment_path.exists():
+                shutil.rmtree(self.experiment_path)
+            self.experiment_path.mkdir(parents=True, exist_ok=False)
+
     def train(self, env: gym.Env, train_config: Dict[str, Any]) -> None:
         """Train the model on the given environment.
 
@@ -204,6 +227,12 @@ class LstmDqnAgent:
         """
         # TODO save config and stuff to experiment folder, like git-commit version, or all files?
         # or you know like ah tensorboard?
+        try:
+            self._setup_experiment_path(self.config["checkpoint"])
+        except FileExistsError:
+            print("Experiment dir already exists, maybe change tag or set on_exist to ignore.")
+            return
+
         n_episodes = train_config["n_episodes"]
         batch_size = train_config["batch_size"]
 

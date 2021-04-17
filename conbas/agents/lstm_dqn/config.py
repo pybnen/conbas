@@ -54,6 +54,7 @@ config = {
     },
     "model": get_model_config(),
     "checkpoint": {
+        "on_exist": "delete",
         "experiments_path": "experiments/",
         "experiment_tag": "lstm_dqn",
         "save_frequency": 10,
