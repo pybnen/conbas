@@ -56,7 +56,7 @@ class ReplayMemory(Memory):
         return len(self.memory)
 
 
-# TODO impl from microsft start code, read paper and reimplement it
+# TODO impl from microsft start code, read paper and reimplement it, then use it
 class PrioritizedReplayMemory:
     def __init__(self, capacity: int, priority_fraction: float = 0.0) -> None:
         self.priority_fraction = priority_fraction

@@ -41,7 +41,7 @@ config = {
         "n_episodes": 16_000,
         "batch_size": 16,
         "max_steps_per_episode": 50,
-
+        "loss_fn": "smooth_l1",
         "replay_batch_size": 16,
         "replay_capacity": 30_000,
         "update_after": 100,

@@ -42,7 +42,7 @@ def train():
                                           max_episode_steps=config["training"]["max_steps_per_episode"],
                                           name="training")
     env = gym.make(env_id)
-    agent.train(env, config["training"])
+    agent.train(env)
 
     # obs, infos = env.reset()
     # obs = ["The End Is Never... ", "The End."]

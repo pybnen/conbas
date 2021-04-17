@@ -25,6 +25,7 @@ from core import Memory, ReplayMemory, Transition, TransitionBatch
 
 
 class LstmDqnAgent:
+    CONFIG_FILENAME = "config.py"
     MODEL_CKPT_SUBFOLDER: str = "saved_models"
     ON_EXIST_IGNORE = "ignore"
     ON_EXIST_DELETE = "delete"
@@ -199,7 +200,7 @@ class LstmDqnAgent:
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 
-    def _setup_experiment_path(self, ckpt_config: Dict[str, Any]) -> None:
+    def _setup_experiment(self, ckpt_config: Dict[str, Any]) -> None:
         """Create directory for experiment.
 
         Args:
@@ -218,17 +219,20 @@ class LstmDqnAgent:
                 shutil.rmtree(self.experiment_path)
             self.experiment_path.mkdir(parents=True, exist_ok=False)
 
-    def train(self, env: gym.Env, train_config: Dict[str, Any]) -> None:
+        # TODO here all relevant files/information for training could be stored
+        # copy config file
+        shutil.copyfile(Path(__file__).parent / self.CONFIG_FILENAME, self.experiment_path / self.CONFIG_FILENAME)
+
+    def train(self, env: gym.Env) -> None:
         """Train the model on the given environment.
 
         Args:
             env: game envrionment, can contain multiple games, that will be played in batches
-            train_config: configs for traning
         """
-        # TODO save config and stuff to experiment folder, like git-commit version, or all files?
-        # or you know like ah tensorboard?
+        train_config: Dict[str, Any] = self.config["training"]
+
         try:
-            self._setup_experiment_path(self.config["checkpoint"])
+            self._setup_experiment(self.config["checkpoint"])
         except FileExistsError:
             print("Experiment dir already exists, maybe change tag or set on_exist to ignore.")
             return
@@ -240,10 +244,12 @@ class LstmDqnAgent:
         tau = train_config["soft_update_tau"]
         discount = train_config["discount"]
 
-        # TODO maybe use huber loss (= smooth_l1_loss)
-        mse = nn.MSELoss(reduction="mean")
+        if train_config["loss_fn"] == "smooth_l1":
+            loss_fn = nn.SmoothL1Loss(reduction="mean")
+        else:
+            # default to mse
+            loss_fn = nn.MSELoss(reduction="mean")
 
-        # TODO use prio replay memory
         replay_memory = ReplayMemory(capacity=train_config["replay_capacity"],
                                      batch_size=train_config["replay_batch_size"])
         clip_grad_norm = train_config["optimizer"]["clip_grad_norm"]
@@ -299,9 +305,8 @@ class LstmDqnAgent:
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
-                            loss = self.update(discount, replay_memory, mse)
+                            loss = self.update(discount, replay_memory, loss_fn)
                             optimizer.zero_grad()
-                            # TODO check what retrain_graph param does
                             loss.backward(retain_graph=False)
                             clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
                             optimizer.step()
