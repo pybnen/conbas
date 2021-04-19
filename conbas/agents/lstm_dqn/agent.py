@@ -42,6 +42,8 @@ class LstmDqnAgent:
         self.experiment_path = None
         self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab)
         self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab)
+        # set target network to eval mode
+        self.lstm_dqn_target.eval()
 
         # NOTE: This would be the place to load a pretrained model
 
@@ -168,15 +170,19 @@ class LstmDqnAgent:
         """
         input_tensor, input_lengths, input_ids = self.extract_input(obs, infos)
 
-        q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn)
+        # no need to build a computation graph here
+        with torch.no_grad():
+            q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn)
+        assert not q_values.requires_grad
 
         # command selection
         command_indices = self.policy.select_command(q_values)
+        assert not command_indices.requires_grad
 
         commands = [self.commands[i] for i in command_indices]
         self.prev_commands = commands
 
-        return commands, command_indices.detach(), input_ids
+        return commands, command_indices, input_ids
 
     def save_state_dict(self, filename: str) -> None:
         """Save state dict to experiment path.
@@ -333,7 +339,7 @@ class LstmDqnAgent:
                     self.writer.add_scalar("train/score", np.mean(scores), global_step=batch_num)
                     self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
                     self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=batch_num)
-                    
+
                     pbar.set_postfix({
                         "eps": self.policy.eps,
                         "score": np.mean(mov_scores),
@@ -364,6 +370,9 @@ class LstmDqnAgent:
         Returns:
             loss: loss of the transition batch
         """
+        assert not self.lstm_dqn_target.training
+        assert self.lstm_dqn.training
+
         transitions = replay_memory.sample()
 
         # This is a neat trick to convert a batch transitions into one
@@ -382,14 +391,18 @@ class LstmDqnAgent:
         # q_values from policy network, Q(obs, a, phi)
         q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(
             dim=1, index=command_indices.unsqueeze(-1)).squeeze(-1)
+        assert q_values.requires_grad
 
-        # argmax_a Q(next_obs, a, phi)
-        _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
-        # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
-        next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
-            dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
-        # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
-        target = rewards + non_terminal_mask * discount * next_q_values.detach()
+        # no need to build a computation graph here
+        with torch.no_grad():
+            # argmax_a Q(next_obs, a, phi)
+            _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
+            # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
+            next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
+                dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
+            assert not next_q_values.requires_grad
+            # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
+            target = rewards + non_terminal_mask * discount * next_q_values.detach()
 
         loss = loss_fn(q_values, target)
 
