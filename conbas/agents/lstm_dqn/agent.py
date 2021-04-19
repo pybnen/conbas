@@ -4,6 +4,8 @@ from pathlib import Path
 from collections import deque
 import time
 import shutil
+from datetime import datetime
+import socket
 
 import spacy
 from tqdm import tqdm
@@ -14,6 +16,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.nn.utils.clip_grad import clip_grad_norm_
+from torch.utils.tensorboard import SummaryWriter
 
 import gym
 from textworld import EnvInfos
@@ -223,6 +226,12 @@ class LstmDqnAgent:
         # copy config file
         shutil.copyfile(Path(__file__).parent / self.CONFIG_FILENAME, self.experiment_path / self.CONFIG_FILENAME)
 
+        log_dir = self.experiment_path / \
+            "{}_{}".format(datetime.now().strftime("%b%d_%H-%M-%S"),
+                           socket.gethostname())
+        # log_dir.mkdir(exist_ok=False)
+        self.writer = SummaryWriter(log_dir)
+
     def train(self, env: gym.Env) -> None:
         """Train the model on the given environment.
 
@@ -258,7 +267,7 @@ class LstmDqnAgent:
                             self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
-        maxlen = 1000
+        maxlen = 500
         mov_scores = deque(maxlen=maxlen)
         mov_steps = deque(maxlen=maxlen)
         mov_losses = deque(maxlen=maxlen)
@@ -266,7 +275,7 @@ class LstmDqnAgent:
         start_time = time.time()
         save_frequency = self.config["checkpoint"]["save_frequency"]
         n_batches = int(math.ceil(n_episodes / batch_size))
-
+        global_step = 0
         try:
             with tqdm(range(1, n_batches + 1)) as pbar:
                 for batch_num in pbar:
@@ -278,7 +287,6 @@ class LstmDqnAgent:
                     dones = [False] * len(obs)
                     not_or_recently_dones = [True] * len(obs)
                     steps = [0] * len(obs)
-
                     while not all(dones):
                         steps = [step + int(not done)
                                  for step, done in zip(steps, dones)]
@@ -313,21 +321,29 @@ class LstmDqnAgent:
 
                             self.update_target_model(tau)
 
+                            # save train statistics
                             mov_losses.append(loss.detach().item())
+                            self.writer.add_scalar("train/loss", loss.detach().item(), global_step=global_step)
+                            global_step += 1
 
+                    # display/save statistics
                     mov_scores.extend(scores)
                     mov_steps.extend(steps)
 
-                    avg_score = np.mean(mov_scores)
+                    self.writer.add_scalar("train/score", np.mean(scores), global_step=batch_num)
+                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
+                    self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=batch_num)
+                    
+                    pbar.set_postfix({
+                        "eps": self.policy.eps,
+                        "score": np.mean(mov_scores),
+                        "steps": np.mean(mov_steps),
+                        "loss": np.mean(mov_losses)})
 
+                    # save model
                     if batch_num % save_frequency == 0:
                         self.save_state_dict("model_weights_{}.pt".format(batch_num * batch_size))
 
-                    pbar.set_postfix({
-                        "eps": self.policy.eps,
-                        "score": avg_score,
-                        "steps": np.mean(mov_steps),
-                        "loss": np.mean(mov_losses)})
         except KeyboardInterrupt:
             print("Keyboard Interrupt")
 
