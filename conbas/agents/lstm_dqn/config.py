@@ -20,6 +20,7 @@ def get_model_config() -> Dict[str, Any]:
 
 config = {
     "general": {
+        "use_cuda": True,
         "game_files": [
             "data/SaladWorld/level_1.ulx",
             # "data/SaladWorld/level_2.ulx",

@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
+import torch.cuda
 import torch.nn as nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
@@ -37,11 +38,13 @@ class LstmDqnAgent:
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         self.commands = commands
         self.config = config
+        use_cuda = torch.cuda.is_available() and config["general"]["use_cuda"]
+        self.device = torch.device("cuda" if use_cuda else "cpu")
         self.prev_commands = []
         self.word_vocab = word_vocab
         self.experiment_path = None
-        self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab)
-        self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab)
+        self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
+        self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
         # set target network to eval mode
         self.lstm_dqn_target.eval()
 
@@ -55,7 +58,8 @@ class LstmDqnAgent:
             assert torch.allclose(target_parameter.data, parameter.data)
 
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
-        self.policy = LinearAnnealedEpsGreedyQPolicy(**self.config["general"]["linear_anneald_args"])
+        policy_config = {"device": self.device, **self.config["general"]["linear_anneald_args"]}
+        self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
 
         self.tokenizer = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
 
@@ -98,7 +102,7 @@ class LstmDqnAgent:
             input_lengths: lenght of each unpadded sequence
         """
         input_tensor_list = [torch.tensor(item) for item in input_ids]
-        input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"])
+        input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"]).to(self.device)
         input_lengths = torch.tensor([len(seq) for seq in input_tensor_list])
         return input_tensor, input_lengths
 
@@ -298,6 +302,8 @@ class LstmDqnAgent:
                                  for step, done in zip(steps, dones)]
 
                         commands, command_indices, input_ids = self.act(obs, infos)
+                        # move command_indices to cpu befor storing them in replay buffer
+                        command_indices = command_indices.cpu()
 
                         old_scores = scores
                         obs, scores, dones, infos = env.step(commands)
@@ -383,10 +389,10 @@ class LstmDqnAgent:
 
         # create tensors for update
         input_tensor, input_lengths = self.pad_input_ids(batch.observation)
-        command_indices = torch.stack(batch.command_index, dim=0)
-        rewards = torch.tensor(batch.reward)
+        command_indices = torch.stack(batch.command_index, dim=0).to(self.device)
+        rewards = torch.tensor(batch.reward, dtype=torch.float32, device=self.device)
         next_input_tensor, next_input_lengths = self.pad_input_ids(batch.next_observation)
-        non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32)
+        non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32, device=self.device)
 
         # q_values from policy network, Q(obs, a, phi)
         q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(

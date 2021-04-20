@@ -7,10 +7,12 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 class LstmDqnModel(nn.Module):
 
-    def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
+    def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str],
+                 device: torch.device) -> None:
         super().__init__()
 
         self.config = config
+        self.device = device
         self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
         # TODO support bi-directional rnn
         self.representation_rnn = nn.GRU(**config["representation_rnn"])
@@ -54,12 +56,13 @@ class LstmDqnModel(nn.Module):
         embed = self.embedding(input_tensor)
         packed = pack_padded_sequence(embed, input_lengths, enforce_sorted=False)
 
-        hidden = torch.zeros(1, len(input_lengths), self.config["representation_rnn"]["hidden_size"])
+        hidden = torch.zeros(1, len(input_lengths), self.config["representation_rnn"]["hidden_size"]).to(self.device)
         output_packed, hidden = self.representation_rnn(packed, hidden)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
         # https://discuss.pytorch.org/t/average-of-the-gru-lstm-outputs-for-variable-length-sequences/57544/4
-        state_representation = output_padded.sum(dim=0) / output_lengths.float().unsqueeze(dim=1)
+        output_lengths_device = output_lengths.float().to(self.device)
+        state_representation = output_padded.sum(dim=0) / output_lengths_device.unsqueeze(dim=1)
         return state_representation
 
     def command_scorer(self, state_representation: torch.Tensor) -> torch.Tensor:
