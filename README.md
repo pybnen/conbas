@@ -2,6 +2,7 @@
 
 [Description]
 
+
 ## Installation
 
 [Installation]
@@ -30,6 +31,7 @@ cd tests
 pytest
 ```
 
+
 ## Train Agent
 
 [Train_Agent]
@@ -37,8 +39,20 @@ pytest
 
 ## Notebooks
 
-Add root of git repro to PYTHONPATH environment variable
-before starting jupyter notebook server eg.
+### Train LSTM-DQN agent in Google Colab
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pybnen/conbas/blob/master/notebooks/lstm_dqn_train.ipynb)
+
+Use the jupyter notebook [lstm_dqn_train.ipynb](https://colab.research.google.com/github/pybnen/conbas/blob/master/notebooks/lstm_dqn_train.ipynb) to train the LSTM-DQN agent in Google Colab.
+
+### Local jupyter notebook server
+
+When running the notbooks locally, add root of git repro to PYTHONPATH environment variable
+before starting jupyter notebook server e.g.
 
 > export PYTHONPATH="$PYTHONPATH:/path/to/git/repo"
 
+
+## Reproduce Results
+
+[HOW_TO_REPRODUCE_RESULTS]
