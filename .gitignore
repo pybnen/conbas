@@ -299,6 +299,7 @@ conbas/main.py
 conbas/utils_.py
 
 notebooks/*
+!notebooks/lstm_dqn_train
 
 tests/*
 
