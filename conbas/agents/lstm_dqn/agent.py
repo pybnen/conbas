@@ -61,7 +61,7 @@ class LstmDqnAgent:
         policy_config = {"device": self.device, **self.config["general"]["linear_anneald_args"]}
         self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
 
-        self.tokenizer = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'tagger'])
+        self.tokenizer = spacy.load('en_core_web_sm')
 
         self.word2id: Dict[str, int] = {}
         for i, w in enumerate(self.word_vocab):
