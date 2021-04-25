@@ -16,7 +16,7 @@ def get_commands(commands_files: List[str]) -> List[str]:
                 line = line.strip()
                 if len(line) > 0:
                     commands.append(line)
-    return list(set(commands))
+    return list(dict.fromkeys(commands))
 
 
 def get_word_vocab(vocab_file: str) -> List[str]:

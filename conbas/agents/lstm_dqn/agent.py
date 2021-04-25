@@ -208,7 +208,7 @@ class LstmDqnAgent:
         Args:
             load_from: path to state dict file
         """
-        state_dict = torch.load(load_from)
+        state_dict = torch.load(load_from, map_location=self.device)
         self.lstm_dqn.load_state_dict(state_dict)
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
