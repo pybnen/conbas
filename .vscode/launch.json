@@ -32,6 +32,14 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Play",
+            "type": "python",
+            "request": "launch",
+            "program": "./conbas/apps/play.py",
+            "console": "integratedTerminal",
+            "args": ["./data/SaladWorld/level_1.ulx", "--max-steps=50"]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
