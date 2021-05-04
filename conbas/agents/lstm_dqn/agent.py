@@ -58,7 +58,7 @@ class LstmDqnAgent:
             assert torch.allclose(target_parameter.data, parameter.data)
 
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
-        policy_config = {"device": self.device, **self.config["general"]["linear_anneald_args"]}
+        policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}
         self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
 
         self.tokenizer = spacy.load('en_core_web_sm')

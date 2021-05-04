@@ -32,7 +32,7 @@ config = {
             # "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_3.txt",
         ],
         "vocab_file": "conbas/agents/lstm_dqn/vocab.txt",
-        "linear_anneald_args": {
+        "linear_annealed_args": {
             "start_eps": 1.0,
             "end_eps": 0.05,
             "duration": 12_000
@@ -40,7 +40,7 @@ config = {
     },
     "training": {
         "n_episodes": 16_000,
-        "batch_size": 16,
+        "batch_size": 1,
         "max_steps_per_episode": 50,
         "loss_fn": "smooth_l1",
         "replay_batch_size": 16,
