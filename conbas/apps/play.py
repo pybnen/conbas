@@ -14,6 +14,7 @@ def build_parser():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("game")
+    parser.add_argument("load_from")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
     return parser
@@ -73,7 +74,7 @@ def main():
     # create agent
     agent = get_agent()
 
-    load_from = "./experiments/lstm_dqn_ml/saved_models/model_weights_16000.pt"
+    load_from = args.load_from  # "./experiments/lstm_dqn_ml/saved_models/model_weights_16000.pt"
     agent.load_state_dict(load_from)
 
     requested_infos = agent.request_infos()
