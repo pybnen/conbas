@@ -286,7 +286,7 @@ class LstmDqnAgent:
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
         maxlen = 500
-        mov_scores = deque(maxlen=maxlen)
+        mov_normalized_scores = deque(maxlen=maxlen)
         mov_steps = deque(maxlen=maxlen)
         mov_losses = deque(maxlen=maxlen)
 
@@ -302,6 +302,7 @@ class LstmDqnAgent:
                     self.init(obs, infos)
 
                     scores = np.array([0] * len(obs))
+                    max_scores = np.array(infos["max_score"])
                     dones = [False] * len(obs)
                     not_or_recently_dones = [True] * len(obs)
                     steps = [0] * len(obs)
@@ -347,16 +348,17 @@ class LstmDqnAgent:
                             global_step += 1
 
                     # display/save statistics
-                    mov_scores.extend(scores)
+                    normalized_scores = scores / max_scores
+                    mov_normalized_scores.extend(normalized_scores.tolist())
                     mov_steps.extend(steps)
 
-                    self.writer.add_scalar("train/score", np.mean(scores), global_step=batch_num)
+                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=batch_num)
                     self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
                     self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=batch_num)
 
                     pbar.set_postfix({
                         "eps": self.policy.eps,
-                        "score": np.mean(mov_scores),
+                        "score": np.mean(mov_normalized_scores),
                         "steps": np.mean(mov_steps),
                         "loss": np.mean(mov_losses)})
 
