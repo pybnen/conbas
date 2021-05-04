@@ -288,6 +288,9 @@ data/*
 # ignore experiments
 experiments/*
 
+# ignore local yaml files (=config files)
+*.local.yaml
+
 ### these ignores will most likely be deleted,
 ### once agents/tests are implemented properly,
 ### but for now I want to keep the files just locally

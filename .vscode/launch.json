@@ -29,7 +29,10 @@
             "type": "python",
             "request": "launch",
             "program": "./conbas/agents/lstm_dqn/train.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "${workspaceFolder}/conbas/agents/lstm_dqn/config.local.yaml"
+            ]
         },
         {
             "name": "Play",
@@ -37,7 +40,11 @@
             "request": "launch",
             "program": "./conbas/apps/play.py",
             "console": "integratedTerminal",
-            "args": ["./data/SaladWorld/level_1.ulx", "--max-steps=50"]
+            "args": [
+                "./data/SaladWorld/level_1.ulx",
+                "./experiments/lstm_dqn/saved_models/model_weights_2.pt",
+                "--max-steps=50"
+            ]
         },
         {
             "name": "Python: Current File",

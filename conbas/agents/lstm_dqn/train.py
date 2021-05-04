@@ -1,11 +1,19 @@
 from typing import List
 
+import argparse
+import yaml
+
 import gym
 import textworld
 import textworld.gym
 
-from config import config
 from agent import LstmDqnAgent
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Train an agent.")
+    parser.add_argument("config_file", help="Path to config file.")
+    return parser
 
 
 def get_commands(commands_files: List[str]) -> List[str]:
@@ -26,6 +34,15 @@ def get_word_vocab(vocab_file: str) -> List[str]:
 
 
 def train():
+    args = build_parser().parse_args()
+
+    with open(args.config_file, "r") as fp:
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
+
+    # print config
+    print(f"Use configuration from '{args.config_file}':")
+    print(yaml.dump(config))
+
     game_files: List[str] = config["general"]["game_files"]
     commands_files: List[str] = config["general"]["commands_files"]
     vocab_file: str = config["general"]["vocab_file"]
@@ -42,7 +59,7 @@ def train():
                                           max_episode_steps=config["training"]["max_steps_per_episode"],
                                           name="training")
     env = gym.make(env_id)
-    agent.train(env)
+    agent.train(env, args.config_file)
 
     # obs, infos = env.reset()
     # obs = ["The End Is Never... ", "The End."]

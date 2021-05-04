@@ -14,19 +14,21 @@ def build_parser():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("game")
-    parser.add_argument("load_from")
+    parser.add_argument("ckpt_path")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
     return parser
 
 
-def get_agent():
+def get_agent(ckpt_path):
     import sys
     sys.path.insert(0, "./conbas/agents/lstm_dqn")
     from train import get_commands, get_word_vocab
     from agent import LstmDqnAgent
     from policy import EpsGreedyQPolicy
-    from config import config
+
+    ckpt = torch.load(ckpt_path)
+    config = ckpt["config"]
 
     commands_files = config["general"]["commands_files"]
     vocab_file = config["general"]["vocab_file"]
@@ -36,6 +38,7 @@ def get_agent():
 
     agent = LstmDqnAgent(config, commands, word_vocab)
     agent.policy = EpsGreedyQPolicy(0.2, agent.device)
+    agent.load_state_dict(ckpt_path, "state_dict")
     return agent
 
 
@@ -72,10 +75,7 @@ def main():
     args = build_parser().parse_args()
 
     # create agent
-    agent = get_agent()
-
-    load_from = args.load_from  # "./experiments/lstm_dqn_ml/saved_models/model_weights_16000.pt"
-    agent.load_state_dict(load_from)
+    agent = get_agent(args.ckpt_path)
 
     requested_infos = agent.request_infos()
     requested_infos.max_score = True

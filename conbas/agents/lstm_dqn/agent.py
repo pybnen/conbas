@@ -29,7 +29,6 @@ from core import Memory, ReplayMemory, Transition, TransitionBatch
 
 
 class LstmDqnAgent:
-    CONFIG_FILENAME = "config.py"
     MODEL_CKPT_SUBFOLDER: str = "saved_models"
     ON_EXIST_IGNORE = "ignore"
     ON_EXIST_DELETE = "delete"
@@ -188,32 +187,40 @@ class LstmDqnAgent:
 
         return commands, command_indices, input_ids
 
-    def save_state_dict(self, filename: str) -> None:
-        """Save state dict to experiment path.
+    def save_checkpoint(self, filename: str) -> None:
+        """Save checkpoint to experiment path.
 
         Args:
             filename: the name of the file
         """
-        if self.experiment_path is not None:
-            ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
-            ckpt_dir.mkdir(parents=True, exist_ok=True)
-
-            torch.save(self.lstm_dqn.state_dict(), ckpt_dir / filename)
-        else:
+        if self.experiment_path is None:
             print("Experiment path not defined, make sure to call .train(env, train_config) before.")
 
-    def load_state_dict(self, load_from) -> None:
+        ckpt_dir = self.experiment_path / self.MODEL_CKPT_SUBFOLDER
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+        ckpt = {
+            "state_dict": self.lstm_dqn.state_dict(),
+            "config": self.config
+        }
+
+        torch.save(ckpt, ckpt_dir / filename)
+
+    def load_state_dict(self, load_from, key=None) -> None:
         """Load state dict.
 
         Args:
             load_from: path to state dict file
         """
         state_dict = torch.load(load_from, map_location=self.device)
+        if key is not None:
+            state_dict = state_dict[key]
+
         self.lstm_dqn.load_state_dict(state_dict)
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 
-    def _setup_experiment(self, ckpt_config: Dict[str, Any]) -> None:
+    def _setup_experiment(self, ckpt_config: Dict[str, Any], config_file: str) -> None:
         """Create directory for experiment.
 
         Args:
@@ -234,7 +241,8 @@ class LstmDqnAgent:
 
         # TODO here all relevant files/information for training could be stored
         # copy config file
-        shutil.copyfile(Path(__file__).parent / self.CONFIG_FILENAME, self.experiment_path / self.CONFIG_FILENAME)
+        config_file_path = Path(config_file)
+        shutil.copyfile(config_file, self.experiment_path / config_file_path.name)
 
         log_dir = self.experiment_path / \
             "{}_{}".format(datetime.now().strftime("%b%d_%H-%M-%S"),
@@ -242,7 +250,7 @@ class LstmDqnAgent:
         # log_dir.mkdir(exist_ok=False)
         self.writer = SummaryWriter(log_dir)
 
-    def train(self, env: gym.Env) -> None:
+    def train(self, env: gym.Env, config_file: str) -> None:
         """Train the model on the given environment.
 
         Args:
@@ -251,7 +259,7 @@ class LstmDqnAgent:
         train_config: Dict[str, Any] = self.config["training"]
 
         try:
-            self._setup_experiment(self.config["checkpoint"])
+            self._setup_experiment(self.config["checkpoint"], config_file)
         except FileExistsError:
             print("Experiment dir already exists, maybe change tag or set on_exist to ignore.")
             return
@@ -354,7 +362,7 @@ class LstmDqnAgent:
 
                     # save model
                     if batch_num % save_frequency == 0:
-                        self.save_state_dict("model_weights_{}.pt".format(batch_num * batch_size))
+                        self.save_checkpoint("model_weights_{}.pt".format(batch_num * batch_size))
 
         except KeyboardInterrupt:
             print("Keyboard Interrupt")
