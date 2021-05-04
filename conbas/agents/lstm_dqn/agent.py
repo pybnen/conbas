@@ -106,12 +106,14 @@ class LstmDqnAgent:
         return input_tensor, input_lengths
 
     def extract_input(self, obs: List[str],
-                      infos: Dict[str, List[Any]]) -> Tuple[torch.Tensor, torch.Tensor, List[List[int]]]:
+                      infos: Dict[str, List[Any]],
+                      prev_commands: List[str]) -> Tuple[torch.Tensor, torch.Tensor, List[List[int]]]:
         """Extracts DQN network input, from current state information
 
         Args:
             obs: List that contains the current observation (=feedback) for each game
             infos: additional (step) information for each game
+            prev_commands: previous command for each game
 
         Returns:
             input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
@@ -127,7 +129,7 @@ class LstmDqnAgent:
         observation_tokens = [preprocess(item, self.tokenizer) for item in obs]
         observation_ids = [words_to_ids(tokens, self.word2id) for tokens in observation_tokens]
 
-        prev_command_tokens = [preprocess(item, self.tokenizer) for item in self.prev_commands]
+        prev_command_tokens = [preprocess(item, self.tokenizer) for item in prev_commands]
         prev_command_ids = [words_to_ids(tokens, self.word2id) for tokens in prev_command_tokens]
 
         look_tokens = [preprocess(item, self.tokenizer) for item in infos["description"]]
@@ -171,7 +173,7 @@ class LstmDqnAgent:
             command_indices: tensor of shape (batch_size, ), contains the command index for each state
             input_ids: list of sequences containing the ids that describe the input
         """
-        input_tensor, input_lengths, input_ids = self.extract_input(obs, infos)
+        input_tensor, input_lengths, input_ids = self.extract_input(obs, infos, self.prev_commands)
 
         # no need to build a computation graph here
         with torch.no_grad():
@@ -320,7 +322,7 @@ class LstmDqnAgent:
                         # calculate immediate reward from scores
                         rewards = np.array(scores) - old_scores
 
-                        _, _, next_input_ids = self.extract_input(obs, infos)
+                        _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
 
                         for i, (input_id, command_index, reward, next_input_id, done) \
                                 in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):

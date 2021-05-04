@@ -43,7 +43,7 @@ def get_agent(ckpt_path):
 
 
 def render_state(obs, infos, agent):
-    input_tensor, input_lengths, _ = agent.extract_input(obs, infos)
+    input_tensor, input_lengths, _ = agent.extract_input(obs, infos, agent.prev_commands)
     with torch.no_grad():
         q_values = agent.q_values(input_tensor, input_lengths, agent.lstm_dqn)
 
