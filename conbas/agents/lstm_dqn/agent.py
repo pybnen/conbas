@@ -323,9 +323,10 @@ class LstmDqnAgent:
                         rewards = np.array(scores) - old_scores
 
                         _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
-
-                        for i, (input_id, command_index, reward, next_input_id, done) \
-                                in enumerate(zip(input_ids, command_indices, rewards, next_input_ids, dones)):
+                        finished_arr = [w or l for w, l in zip(infos["won"], infos["lost"])]
+                        for i, (input_id, command_index, reward, next_input_id, done, finished) \
+                                in enumerate(
+                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, finished_arr)):
 
                             # only append transitions from not done or just recently done episodes
                             if not_or_recently_dones[i]:
@@ -333,7 +334,7 @@ class LstmDqnAgent:
                                     not_or_recently_dones[i] = False
 
                                 replay_memory.append(
-                                    Transition(input_id, command_index, reward, next_input_id, done))
+                                    Transition(input_id, command_index, reward, next_input_id, finished))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
                             loss = self.update(discount, replay_memory, loss_fn)
