@@ -43,7 +43,8 @@
             "module": "conbas.apps.eval",
             "args": [
                 "./data/SaladWorld/level_1.ulx",
-                "--agent=lstm_dqn"
+                "--agent=lstm_dqn",
+                "--ckpt-path=./experiments/lstm_dqn/saved_models/model_weights_7.pt",
                 "--max-steps=50"
             ]
         },
