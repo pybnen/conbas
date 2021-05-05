@@ -8,7 +8,7 @@ class RandomAgent:
 
     def __init__(self, commands: Optional[List[str]] = None, use_admissible=False) -> None:
         assert commands or use_admissible
-        
+
         self.commands = commands
         self.use_admissible = use_admissible
 
@@ -20,6 +20,9 @@ class RandomAgent:
         request_infos = EnvInfos()
         request_infos.admissible_commands = self.use_admissible
         return request_infos
+
+    def init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
+        pass
 
     def act(self, obs: List[str], infos: Dict[str, List[Any]]
             ) -> List[str]:

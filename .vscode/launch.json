@@ -43,6 +43,7 @@
             "module": "conbas.apps.eval",
             "args": [
                 "./data/SaladWorld/level_1.ulx",
+                "--agent=lstm_dqn"
                 "--max-steps=50"
             ]
         },

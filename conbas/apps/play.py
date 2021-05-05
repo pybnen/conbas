@@ -12,7 +12,7 @@ def build_parser():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("game_file")
-    parser.add_argument("ckpt_path")
+    parser.add_argument("ckpt-path")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
     return parser
@@ -33,8 +33,9 @@ def get_agent(ckpt_path):
     word_vocab = get_word_vocab(vocab_file)
 
     agent = LstmDqnAgent(config, commands, word_vocab)
-    agent.policy = EpsGreedyQPolicy(0.2, agent.device)
+    agent.policy = EpsGreedyQPolicy(0.1, agent.device)
     agent.load_state_dict(ckpt_path, "state_dict")
+    agent.lstm_dqn.train()
     return agent
 
 
