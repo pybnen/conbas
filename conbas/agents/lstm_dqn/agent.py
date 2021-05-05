@@ -295,7 +295,7 @@ class LstmDqnAgent:
         start_time = time.time()
         save_frequency = self.config["checkpoint"]["save_frequency"]
         n_batches = int(math.ceil(n_episodes / batch_size))
-        global_step = 0
+        update_step = 0
         try:
             with tqdm(range(1, n_batches + 1)) as pbar:
                 for batch_num in pbar:
@@ -339,15 +339,16 @@ class LstmDqnAgent:
                             loss = self.update(discount, replay_memory, loss_fn)
                             optimizer.zero_grad()
                             loss.backward(retain_graph=False)
-                            clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
+                            total_norm = clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
                             optimizer.step()
 
                             self.update_target_model(tau)
 
                             # save train statistics
                             mov_losses.append(loss.detach().item())
-                            self.writer.add_scalar("train/loss", loss.detach().item(), global_step=global_step)
-                            global_step += 1
+                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=update_step)
+                            self.writer.add_scalar("train/loss", loss.detach().item(), global_step=update_step)
+                            update_step += 1
 
                     # display/save statistics
                     normalized_scores = scores / max_scores
