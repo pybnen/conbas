@@ -7,7 +7,7 @@ import gym
 import textworld
 import textworld.gym
 
-from agent import LstmDqnAgent
+from .agent import LstmDqnAgent
 
 
 def build_parser():

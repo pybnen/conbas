@@ -4,8 +4,6 @@ import numpy as np
 import torch
 
 import textworld
-import textworld.agents
-
 import textworld.gym
 import gym
 
@@ -13,7 +11,7 @@ import gym
 def build_parser():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("game")
+    parser.add_argument("game_file")
     parser.add_argument("ckpt_path")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
@@ -21,11 +19,9 @@ def build_parser():
 
 
 def get_agent(ckpt_path):
-    import sys
-    sys.path.insert(0, "./conbas/agents/lstm_dqn")
-    from train import get_commands, get_word_vocab
-    from agent import LstmDqnAgent
-    from policy import EpsGreedyQPolicy
+    from conbas.agents.lstm_dqn.train import get_commands, get_word_vocab
+    from conbas.agents import LstmDqnAgent
+    from conbas.agents.lstm_dqn.policy import EpsGreedyQPolicy
 
     ckpt = torch.load(ckpt_path)
     config = ckpt["config"]
@@ -79,7 +75,7 @@ def main():
 
     requested_infos = agent.request_infos()
     requested_infos.max_score = True
-    env_id = textworld.gym.register_game(args.game,
+    env_id = textworld.gym.register_game(args.game_file,
                                          requested_infos,
                                          batch_size=1,
                                          max_episode_steps=args.max_steps)

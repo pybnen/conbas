@@ -25,39 +25,36 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Train lstm-dqn",
+            "name": "Module: conbas.apps.play",
             "type": "python",
             "request": "launch",
-            "program": "./conbas/agents/lstm_dqn/train.py",
+            "module": "conbas.apps.play",
+            "console": "integratedTerminal",
+            "args": [
+                "./data/SaladWorld/level_1.ulx",
+                "./experiments/lstm_dqn/saved_models/model_weights_7.pt",
+                "--max-steps=50"
+            ]
+        },
+        {
+            "name": "Module: conbas.apps.eval",
+            "type": "python",
+            "request": "launch",
+            "module": "conbas.apps.eval",
+            "args": [
+                "./data/SaladWorld/level_1.ulx",
+                "--max-steps=50"
+            ]
+        },
+        {
+            "name": "Module: conbas.agents.lstm_dqn.train",
+            "type": "python",
+            "request": "launch",
+            "module": "conbas.agents.lstm_dqn.train",
             "console": "integratedTerminal",
             "args": [
                 "${workspaceFolder}/conbas/agents/lstm_dqn/config.local.yaml"
             ]
         },
-        {
-            "name": "Play",
-            "type": "python",
-            "request": "launch",
-            "program": "./conbas/apps/play.py",
-            "console": "integratedTerminal",
-            "args": [
-                "./data/SaladWorld/level_1.ulx",
-                "./experiments/lstm_dqn/saved_models/model_weights_2.pt",
-                "--max-steps=50"
-            ]
-        },
-        {
-            "name": "Python: Current File",
-            "type": "python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Module",
-            "type": "python",
-            "request": "launch",
-            "module": "conbas.main"
-        }
     ]
 }

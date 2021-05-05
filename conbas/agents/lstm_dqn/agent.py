@@ -22,10 +22,10 @@ from torch.utils.tensorboard import SummaryWriter
 import gym
 from textworld import EnvInfos
 
-from model import LstmDqnModel
-from policy import LinearAnnealedEpsGreedyQPolicy
-from utils import preprocess, words_to_ids
-from core import Memory, ReplayMemory, Transition, TransitionBatch
+from .model import LstmDqnModel
+from .policy import LinearAnnealedEpsGreedyQPolicy
+from .utils import preprocess, words_to_ids
+from .core import Memory, ReplayMemory, Transition, TransitionBatch
 
 
 class LstmDqnAgent:
