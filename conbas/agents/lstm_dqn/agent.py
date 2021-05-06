@@ -272,6 +272,7 @@ class LstmDqnAgent:
         update_after = train_config["update_after"]
         tau = train_config["soft_update_tau"]
         discount = train_config["discount"]
+        step_limit = train_config["max_steps_per_episode"]
 
         if train_config["loss_fn"] == "smooth_l1":
             loss_fn = nn.SmoothL1Loss(reduction="mean")
@@ -305,12 +306,21 @@ class LstmDqnAgent:
 
                     scores = np.array([0] * len(obs))
                     max_scores = np.array(infos["max_score"])
-                    dones = [False] * len(obs)
-                    not_or_recently_dones = [True] * len(obs)
                     steps = [0] * len(obs)
-                    while not all(dones):
-                        steps = [step + int(not done)
-                                 for step, done in zip(steps, dones)]
+
+                    # distinguish between:
+                    # - done:                       env won/lost
+                    # - step_limit_reached:         env not won/lost
+                    # - finished:                   done or step_limit_reached
+                    # - nor_or_recently_finished    either not finished or finished this step
+                    dones = [False] * len(obs)
+                    step_limit_reached = [False] * len(obs)
+                    batch_finished = [False] * len(obs)
+                    not_or_recently_finished = [True] * len(obs)
+
+                    while not all(batch_finished):
+                        # increment step only if env is not finished
+                        steps = [step + int(not finished) for step, finished in zip(steps, batch_finished)]
 
                         commands, command_indices, input_ids = self.act(obs, infos)
                         # move command_indices to cpu befor storing them in replay buffer
@@ -323,18 +333,21 @@ class LstmDqnAgent:
                         rewards = np.array(scores) - old_scores
 
                         _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
-                        finished_arr = [w or l for w, l in zip(infos["won"], infos["lost"])]
+
+                        step_limit_reached = [step >= step_limit for step in steps]
+                        batch_finished = [done or reached for done, reached in zip(dones, step_limit_reached)]
+
                         for i, (input_id, command_index, reward, next_input_id, done, finished) \
                                 in enumerate(
-                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, finished_arr)):
+                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, batch_finished)):
 
-                            # only append transitions from not done or just recently done episodes
-                            if not_or_recently_dones[i]:
-                                if done:
-                                    not_or_recently_dones[i] = False
-
+                            # only append transitions from not finished or just recently finished episodes
+                            if not_or_recently_finished[i]:
+                                if finished:
+                                    not_or_recently_finished[i] = False
+                                # done is True only if env is won/lost, not if step limit is reached
                                 replay_memory.append(
-                                    Transition(input_id, command_index, reward, next_input_id, finished))
+                                    Transition(input_id, command_index, reward, next_input_id, done))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
                             loss = self.update(discount, replay_memory, loss_fn)

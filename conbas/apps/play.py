@@ -12,7 +12,7 @@ def build_parser():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("game_file")
-    parser.add_argument("ckpt-path")
+    parser.add_argument("ckpt_path")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
     return parser

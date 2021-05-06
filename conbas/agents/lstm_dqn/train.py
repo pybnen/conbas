@@ -54,13 +54,11 @@ def train():
     requested_infos = agent.request_infos()
     # add max score, to normalize score for logging
     requested_infos.max_score = True
-    requested_infos.won = True
-    requested_infos.lost = True
     env_id = textworld.gym.register_games(game_files,
                                           requested_infos,
                                           batch_size=config["training"]["batch_size"],
                                           asynchronous=True, auto_reset=False,
-                                          max_episode_steps=config["training"]["max_steps_per_episode"],
+                                          # max_episode_steps=config["training"]["max_steps_per_episode"],
                                           name="training")
     env = gym.make(env_id)
     agent.train(env, args.config_file)
