@@ -43,8 +43,10 @@
             "module": "conbas.apps.eval",
             "args": [
                 "./data/SaladWorld/level_1.ulx",
-                "--agent=lstm_dqn",
-                "--ckpt-path=./experiments/lstm_dqn/saved_models/model_weights_7.pt",
+                // "--agent=lstm_dqn",
+                // "--ckpt-path=./experiments/lstm_dqn/saved_models/model_weights_7.pt",
+                "--agent=random",
+                "--commands-file=./conbas/agents/lstm_dqn/commands/cmd_saladworld_level_1.txt",
                 "--max-steps=50"
             ]
         },
@@ -58,5 +60,12 @@
                 "${workspaceFolder}/conbas/agents/lstm_dqn/config.local.yaml"
             ]
         },
+        {
+            "name": "Python: Current File (Integrated Terminal)",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
     ]
 }
