@@ -13,6 +13,7 @@ from .agent import LstmDqnAgent
 def build_parser():
     parser = argparse.ArgumentParser(description="Train an agent.")
     parser.add_argument("config_file", help="Path to config file.")
+    parser.add_argument("--tag", type=str, help="Overwrite experiment tag.")
     return parser
 
 
@@ -38,6 +39,9 @@ def train():
 
     with open(args.config_file, "r") as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
+
+    if args.tag is not None:
+        config["checkpoint"]["experiment_tag"] = args.tag
 
     # print config
     print(f"Use configuration from '{args.config_file}':")

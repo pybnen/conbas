@@ -6,6 +6,7 @@ import time
 import shutil
 from datetime import datetime
 import socket
+import yaml
 
 import spacy
 from tqdm import tqdm
@@ -245,6 +246,8 @@ class LstmDqnAgent:
         # copy config file
         config_file_path = Path(config_file)
         shutil.copyfile(config_file, self.experiment_path / config_file_path.name)
+        with open(self.experiment_path / "agent_config.yaml", "w") as fp:
+            fp.write(yaml.dump(self.config))
 
         log_dir = self.experiment_path / \
             "{}_{}".format(datetime.now().strftime("%b%d_%H-%M-%S"),
