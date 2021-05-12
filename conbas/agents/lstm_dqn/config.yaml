@@ -39,4 +39,5 @@ checkpoint:
   on_exist: "ignore"
   experiments_path: "experiments/"
   experiment_tag: "lstm_dqn"
+  experiment_description: "Train the lstm dqn agent on Saladworld level 1."
   save_frequency: 10

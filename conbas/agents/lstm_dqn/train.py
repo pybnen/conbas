@@ -13,7 +13,8 @@ from .agent import LstmDqnAgent
 def build_parser():
     parser = argparse.ArgumentParser(description="Train an agent.")
     parser.add_argument("config_file", help="Path to config file.")
-    parser.add_argument("--tag", type=str, help="Overwrite experiment tag.")
+    parser.add_argument("--tag", "-t", type=str, help="Overwrite experiment tag.")
+    parser.add_argument("--desc", "-d", type=str, help="Overwrite experiment description.")
     return parser
 
 
@@ -42,6 +43,8 @@ def train():
 
     if args.tag is not None:
         config["checkpoint"]["experiment_tag"] = args.tag
+    if args.desc is not None:
+        config["checkpoint"]["experiment_description"] = args.desc
 
     # print config
     print(f"Use configuration from '{args.config_file}':")
