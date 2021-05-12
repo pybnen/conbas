@@ -6,7 +6,7 @@ import time
 import shutil
 from datetime import datetime
 import socket
-from torch.types import Number
+# from torch.types import Number
 import yaml
 
 import spacy
@@ -408,7 +408,7 @@ class LstmDqnAgent:
                loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
                optimizer: optim.Optimizer,
                tau: float,
-               clip_grad_norm: float) -> Tuple[Number, Number]:
+               clip_grad_norm: float):  # -> Tuple[Number, Number]:
         assert not self.lstm_dqn_target.training
         assert self.lstm_dqn.training
 
