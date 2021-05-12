@@ -2,12 +2,8 @@ general:
   use_cuda: true
   game_files:
     - "data/SaladWorld/level_1.ulx"
-    # - "data/SaladWorld/level_2.ulx"
-    # - "data/SaladWorld/level_3.ulx"
   commands_files:
     - "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_1.txt"
-    # - "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_2.txt"
-    # - "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_3.txt"
   vocab_file: "conbas/agents/lstm_dqn/vocab.txt"
   linear_annealed_args:
     start_eps: 1.0
@@ -15,11 +11,15 @@ general:
     duration: 12_000
 training:
   n_episodes: 16_000
-  batch_size: 1
-  max_steps_per_episode: 50
-  loss_fn: "smooth_l1"
-  replay_batch_size: 16
-  replay_capacity: 30_000
+  batch_size: 2
+  max_steps_per_episode: 7
+  loss_fn: "mse"
+  replay_buffer:
+    batch_size: 16
+    capacity: 30_000
+    alpha: 0.6
+    start_beta: 0.4
+    annealing_duration: 12_000
   update_after: 100
   soft_update_tau: 0.001
   discount: 0.99

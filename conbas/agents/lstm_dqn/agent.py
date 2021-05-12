@@ -6,6 +6,7 @@ import time
 import shutil
 from datetime import datetime
 import socket
+from torch.types import Number
 import yaml
 
 import spacy
@@ -26,7 +27,7 @@ from textworld import EnvInfos
 from .model import LstmDqnModel
 from .policy import LinearAnnealedEpsGreedyQPolicy
 from .utils import preprocess, words_to_ids
-from .core import Memory, ReplayMemory, Transition, TransitionBatch
+from .core import Memory, ReplayMemory, Transition, TransitionBatch, PrioritizedReplayMemory
 
 
 class LstmDqnAgent:
@@ -278,13 +279,20 @@ class LstmDqnAgent:
         step_limit = train_config["max_steps_per_episode"]
 
         if train_config["loss_fn"] == "smooth_l1":
-            loss_fn = nn.SmoothL1Loss(reduction="mean")
+            loss_fn = nn.SmoothL1Loss(reduction="none")
         else:
             # default to mse
-            loss_fn = nn.MSELoss(reduction="mean")
+            loss_fn = nn.MSELoss(reduction="none")
 
-        replay_memory = ReplayMemory(capacity=train_config["replay_capacity"],
-                                     batch_size=train_config["replay_batch_size"])
+        # replay_memory = ReplayMemory(capacity=train_config["replay_capacity"],
+        #                              batch_size=train_config["replay_batch_size"])
+        buffer_args = train_config["replay_buffer"]
+        replay_memory = PrioritizedReplayMemory(capacity=buffer_args["capacity"],
+                                                batch_size=buffer_args["batch_size"],
+                                                alpha=buffer_args["alpha"],
+                                                start_beta=buffer_args["start_beta"],
+                                                annealing_duration=buffer_args["annealing_duration"])
+
         clip_grad_norm = train_config["optimizer"]["clip_grad_norm"]
 
         parameters = filter(lambda p: p.requires_grad,
@@ -353,18 +361,22 @@ class LstmDqnAgent:
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
-                            loss = self.update(discount, replay_memory, loss_fn)
-                            optimizer.zero_grad()
-                            loss.backward(retain_graph=False)
-                            total_norm = clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
-                            optimizer.step()
+                            loss, total_norm = self.update(
+                                discount, replay_memory, loss_fn, optimizer, tau, clip_grad_norm)
 
-                            self.update_target_model(tau)
+                            # optimizer.zero_grad()
+                            # loss.backward(retain_graph=False)
+                            # total_norm = clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
+                            # optimizer.step()
+
+                            # self.update_target_model(tau)
 
                             # save train statistics
-                            mov_losses.append(loss.detach().item())
+                            mov_losses.append(loss)
                             self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=update_step)
-                            self.writer.add_scalar("train/loss", loss.detach().item(), global_step=update_step)
+                            self.writer.add_scalar("train/loss", loss, global_step=update_step)
+                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=update_step)
+                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=update_step)
                             update_step += 1
 
                     # display/save statistics
@@ -374,7 +386,6 @@ class LstmDqnAgent:
 
                     self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=batch_num)
                     self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
-                    self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=batch_num)
 
                     pbar.set_postfix({
                         "eps": self.policy.eps,
@@ -393,23 +404,15 @@ class LstmDqnAgent:
 
     def update(self,
                discount: float,
-               replay_memory: Memory,
-               loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]) -> torch.Tensor:
-        """Prepares one update step.
-
-        Samples transition batch from replay memory, and calculates loss.
-
-        Args:
-            discount: gamma
-            replay_memory: contains transition history
-            loss_fn: used to calculate loss
-        Returns:
-            loss: loss of the transition batch
-        """
+               replay_memory: PrioritizedReplayMemory,
+               loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+               optimizer: optim.Optimizer,
+               tau: float,
+               clip_grad_norm: float) -> Tuple[Number, Number]:
         assert not self.lstm_dqn_target.training
         assert self.lstm_dqn.training
 
-        transitions = replay_memory.sample()
+        transitions, weights, indices = replay_memory.sample()
 
         # This is a neat trick to convert a batch transitions into one
         # transition that contains in each attribute a batch of that attribute,
@@ -423,6 +426,7 @@ class LstmDqnAgent:
         rewards = torch.tensor(batch.reward, dtype=torch.float32, device=self.device)
         next_input_tensor, next_input_lengths = self.pad_input_ids(batch.next_observation)
         non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32, device=self.device)
+        weights = torch.from_numpy(weights).to(device=self.device)
 
         # q_values from policy network, Q(obs, a, phi)
         q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(
@@ -440,9 +444,23 @@ class LstmDqnAgent:
             # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
             target = rewards + non_terminal_mask * discount * next_q_values.detach()
 
-        loss = loss_fn(q_values, target)
+        loss = loss_fn(q_values, target) * weights
+        priorities = loss.detach().cpu().numpy()
+        loss = loss.mean()
 
-        return loss
+        # update step
+        optimizer.zero_grad()
+        loss.backward(retain_graph=False)
+        total_norm = clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
+        optimizer.step()
+
+        # update priorities
+        replay_memory.update_priorities(indices, priorities)
+
+        # update target model
+        self.update_target_model(tau)
+
+        return loss.detach().item(), total_norm.item()
 
     def update_target_model(self, tau: float):
         """Performs soft update of target network
