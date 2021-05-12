@@ -146,7 +146,8 @@ class LstmDqnAgent:
         input_tensor, input_lengths = self.pad_input_ids(input_ids)
         return input_tensor, input_lengths, input_ids
 
-    def q_values(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor, lstm_dqn: LstmDqnModel) -> torch.Tensor:
+    def q_values(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor,
+                 lstm_dqn_model: LstmDqnModel) -> torch.Tensor:
         """Calculate Q values for all commands for the current input
 
         Args:
@@ -158,8 +159,8 @@ class LstmDqnAgent:
             command_scores: tensor fo shape (batch_size, n_commands) for each state a list
                 containing the scores of each command in that state
         """
-        state_representations = lstm_dqn.representation_generator(input_tensor, input_lengths)
-        return self.lstm_dqn.command_scorer(state_representations)
+        state_representations = lstm_dqn_model.representation_generator(input_tensor, input_lengths)
+        return lstm_dqn_model.command_scorer(state_representations)
 
     def act(self, obs: List[str], infos: Dict[str, List[Any]]
             ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
