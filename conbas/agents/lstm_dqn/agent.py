@@ -460,7 +460,11 @@ class LstmDqnAgent:
         # update target model
         self.update_target_model(tau)
 
-        return loss.detach().item(), total_norm.item()
+        # in server torch version total_norm is float
+        if type(total_norm) == torch.Tensor:
+            total_norm = total_norm.detach().cpu().item()
+
+        return loss.detach().cpu().item(), total_norm
 
     def update_target_model(self, tau: float):
         """Performs soft update of target network
