@@ -65,7 +65,7 @@ def train():
                                           requested_infos,
                                           batch_size=config["training"]["batch_size"],
                                           asynchronous=True, auto_reset=False,
-                                          # max_episode_steps=config["training"]["max_steps_per_episode"],
+                                          max_episode_steps=0,
                                           name="training")
     env = gym.make(env_id)
     agent.train(env, args.config_file)
