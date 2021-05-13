@@ -102,6 +102,7 @@ class PrioritizedReplayMemory(Memory):
 
         weights = (len(self) * probs[indices])**(-self.beta)
         weights /= np.max(weights)
+        weights = np.array(weights, dtype=np.float32)
 
         return [self.memory[i] for i in indices], weights, indices
 
