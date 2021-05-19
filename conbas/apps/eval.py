@@ -21,6 +21,7 @@ def parse_arguments():
     parser.add_argument("--agent", choices=['random', 'lstm_dqn'], required=True)
     parser.add_argument("--max-steps", type=int, default=50, metavar="STEPS",
                         help="Limit maximum number of steps. (0: unlimited)")
+    parser.add_argument("--cpu", default=None, action="store_true")
 
     agent_parser = {}
     agent_parser["random"] = argparse.ArgumentParser(description="Arguments for random agent.")
@@ -64,8 +65,14 @@ def get_lstm_dqn_agent(args):
 
     print("Evaluate LstmDqnAgent with arguments {}".format(args))
 
-    ckpt = torch.load(args.ckpt_path)
+    device = None
+    if args.cpu:
+        device = torch.device("cpu")
+    ckpt = torch.load(args.ckpt_path, map_location=device)
     config = ckpt["config"]
+    # overwrite cuda setting if argument is set
+    if args.cpu:
+        config["general"]["use_cuda"] = False
     print(yaml.dump(config))
 
     commands_files = config["general"]["commands_files"]

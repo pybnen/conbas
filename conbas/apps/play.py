@@ -8,23 +8,32 @@ import textworld.gym
 import gym
 
 
-def build_parser():
+def parse_arguments():
     description = "Play a TextWorld game (.z8 or .ulx)."
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("game_file")
     parser.add_argument("ckpt_path")
+    parser.add_argument("--cpu", default=None, action="store_true")
     parser.add_argument("--max-steps", type=int, default=0, metavar="STEPS",
                         help="Limit maximum number of steps.")
-    return parser
+    args = parser.parse_args()
+    return args
 
 
-def get_agent(ckpt_path):
+def get_agent(args):
     from conbas.agents.lstm_dqn.train import get_commands, get_word_vocab
     from conbas.agents import LstmDqnAgent
     from conbas.agents.lstm_dqn.policy import EpsGreedyQPolicy
 
-    ckpt = torch.load(ckpt_path)
+    device = None
+    if args.cpu:
+        device = torch.device("cpu")
+
+    ckpt = torch.load(args.ckpt_path, map_location=device)
     config = ckpt["config"]
+    # overwrite cuda setting if argument is set
+    if args.cpu:
+        config["general"]["use_cuda"] = False
 
     commands_files = config["general"]["commands_files"]
     vocab_file = config["general"]["vocab_file"]
@@ -34,7 +43,7 @@ def get_agent(ckpt_path):
 
     agent = LstmDqnAgent(config, commands, word_vocab)
     agent.policy = EpsGreedyQPolicy(0.1, agent.device)
-    agent.load_state_dict(ckpt_path, "state_dict")
+    agent.load_state_dict(args.ckpt_path, "state_dict")
     agent.lstm_dqn.train()
     return agent
 
@@ -69,10 +78,10 @@ def render_state(obs, infos, agent):
 
 
 def main():
-    args = build_parser().parse_args()
+    args = parse_arguments()
 
     # create agent
-    agent = get_agent(args.ckpt_path)
+    agent = get_agent(args)
 
     requested_infos = agent.request_infos()
     requested_infos.max_score = True
