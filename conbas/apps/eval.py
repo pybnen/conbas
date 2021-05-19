@@ -125,7 +125,10 @@ def main():
                 "score": scores[0],
                 "max score": max_score})
 
-    summary = "DONE mean {:.2f}, std: {:.4f}".format(np.mean(scores_arr), np.std(scores_arr))
+    mean_score = np.mean(scores_arr)
+    norm_score = mean_score / max_score
+
+    summary = "DONE mean (abs/normalised) {:.2f} / {:.2f}, std: {:.4f}".format(mean_score, norm_score, np.std(scores_arr))
     print("=" * len(summary))
     print(summary)
     env.close()
