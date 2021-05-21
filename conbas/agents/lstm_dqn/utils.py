@@ -37,3 +37,11 @@ def words_to_ids(words: List[str], word2id: Dict[str, int]) -> List[int]:
             ids.append(word2id["<UNK>"])
 
     return ids
+
+
+def linear_decay_fn(upper_bound, lower_bound, duration):
+    return lambda step:  max(lower_bound, upper_bound - (upper_bound - lower_bound) * step / duration)
+
+
+def linear_inc_fn(upper_bound, lower_bound, duration):
+    return lambda step: min(upper_bound, lower_bound + (upper_bound - lower_bound) * step / duration)

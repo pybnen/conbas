@@ -1,3 +1,4 @@
+from typing import Callable
 import torch
 from torch.distributions.categorical import Categorical
 
@@ -27,35 +28,14 @@ class EpsGreedyQPolicy(Policy):
         return command_indices
 
 
-class LinearAnnealedEpsGreedyQPolicy(Policy):
-    def __init__(self, start_eps: float, end_eps: float, duration: int, device: torch.device) -> None:
-        assert start_eps > end_eps
-        assert duration > 0
+class AnnealedEpsGreedyQPolicy(EpsGreedyQPolicy):
+    def __init__(self, start_eps: float, device: torch.device,
+                 anneal_fn: Callable[[int], float]) -> None:
+        super().__init__(eps=start_eps, device=device)
+        self.anneal_fn = anneal_fn
 
-        self.start_eps = start_eps
-        self.end_eps = end_eps
-        self.duration = duration
-        self.delta_eps = (self.start_eps - self.end_eps) / duration
-
-        self.policy = EpsGreedyQPolicy(self.start_eps, device)
-
-    @property
-    def eps(self) -> float:
-        return self.policy.eps
-
-    @eps.setter
-    def eps(self, eps) -> None:
-        self.policy.eps = eps
-
-    def reset(self) -> None:
-        self.eps = self.start_eps
-        # self.eps = self.start_eps
-
-    def select_command(self, q_values: torch.Tensor) -> torch.Tensor:
-        command_indices = self.policy.select_command(q_values)
-        # anneal eps
-        self.eps = max(self.eps - self.delta_eps, self.end_eps)
-        return command_indices
+    def update(self, step: int):
+        self.eps = self.anneal_fn(step)
 
 
 class SoftmaxPolicy(Policy):

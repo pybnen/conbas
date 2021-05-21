@@ -28,7 +28,6 @@ def get_agent(args):
     device = None
     if args.cpu:
         device = torch.device("cpu")
-
     ckpt = torch.load(args.ckpt_path, map_location=device)
     config = ckpt["config"]
     # overwrite cuda setting if argument is set

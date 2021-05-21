@@ -1,4 +1,4 @@
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Tuple, Callable
 
 import numpy as np
 import torch
@@ -56,17 +56,14 @@ class ReplayMemory(Memory):
 
 
 class PrioritizedReplayMemory(Memory):
-    def __init__(self, capacity: int, batch_size: int, alpha: float = 0.6,
-                 start_beta: float = 0.4, annealing_duration: int = 10_000) -> None:
+    def __init__(self, capacity: int, batch_size: int,
+                 anneal_fn: Callable[[int], float], alpha: float = 0.6, start_beta: float = 0.4) -> None:
         super().__init__(batch_size)
         self.capacity = capacity
 
         self.alpha = alpha
-        self.start_beta = start_beta
-        self.annealing_duration = annealing_duration
-
         self.beta = start_beta
-        self.beta_offset = (1.0 - self.start_beta) / self.annealing_duration
+        self.anneal_fn = anneal_fn
 
         self.memory: List[Transition] = []
         self.priorities = np.zeros(capacity, dtype=np.float32)
@@ -98,8 +95,6 @@ class PrioritizedReplayMemory(Memory):
 
         indices = np.random.choice(np.arange(len(self)), size=self.batch_size, replace=replace, p=probs)
 
-        self.beta = min(1.0, self.beta + self.beta_offset)
-
         weights = (len(self) * probs[indices])**(-self.beta)
         weights /= np.max(weights)
         weights = np.array(weights, dtype=np.float32)
@@ -111,6 +106,9 @@ class PrioritizedReplayMemory(Memory):
         self.priorities[indices] = losses
         # for idx, prio in zip(indices, losses):
         #    self.priorities[idx] = prio
+
+    def update_beta(self, step: int):
+        self.beta = self.anneal_fn(step)
 
     def __len__(self) -> int:
         return len(self.memory)

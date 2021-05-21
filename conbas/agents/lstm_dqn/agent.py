@@ -1,5 +1,4 @@
 from typing import Optional, List, Dict, Any, Tuple, Callable
-import math
 from pathlib import Path
 from collections import deque
 import time
@@ -13,6 +12,7 @@ import spacy
 from tqdm import tqdm
 
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.cuda
 import torch.nn as nn
@@ -25,8 +25,8 @@ import gym
 from textworld import EnvInfos
 
 from .model import LstmDqnModel
-from .policy import LinearAnnealedEpsGreedyQPolicy
-from .utils import preprocess, words_to_ids
+from .policy import AnnealedEpsGreedyQPolicy
+from .utils import preprocess, words_to_ids, linear_decay_fn, linear_inc_fn
 from .core import Memory, ReplayMemory, Transition, TransitionBatch, PrioritizedReplayMemory
 
 
@@ -58,9 +58,13 @@ class LstmDqnAgent:
         for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             assert torch.allclose(target_parameter.data, parameter.data)
 
+        annealed_args = self.config["general"]["eps_annealed_args"]
+        self.anneal_fn = linear_decay_fn(annealed_args["eps_ub"], annealed_args["eps_lb"], annealed_args["eps_duration"])
+        self.policy = AnnealedEpsGreedyQPolicy(annealed_args["eps_ub"], device=self.device, anneal_fn=self.anneal_fn)
+
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
-        policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}
-        self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
+        # policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}
+        # self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
 
         self.tokenizer = spacy.load('en_core_web_sm')
 
@@ -225,7 +229,7 @@ class LstmDqnAgent:
         # copy parameter from model to target model
         self.update_target_model(tau=1.0)
 
-    def _setup_experiment(self, ckpt_config: Dict[str, Any], config_file: str) -> None:
+    def _setup_experiment(self, ckpt_config: Dict[str, Any], config_file: str, beta_anneal_fn) -> None:
         """Create directory for experiment.
 
         Args:
@@ -251,6 +255,22 @@ class LstmDqnAgent:
         with open(self.experiment_path / "agent_config.yaml", "w") as fp:
             fp.write(yaml.dump(self.config))
 
+        # plot eps decay
+        fig, ax = plt.subplots(figsize=(15, 7))
+        plt.xlabel("update steps")
+        plt.ylabel("eps")
+        ax.plot([self.anneal_fn(s) for s in range(0, self.config["training"]["update_steps"])])
+        fig.savefig(self.experiment_path / "annealed_eps.png")
+        plt.close(fig)
+
+        # plot beta anneal
+        fig, ax = plt.subplots(figsize=(15, 7))
+        plt.xlabel("update steps")
+        plt.ylabel("beta")
+        ax.plot([beta_anneal_fn(s) for s in range(0, self.config["training"]["update_steps"])])
+        fig.savefig(self.experiment_path / "annealed_beta.png")
+        plt.close(fig)
+
         log_dir = self.experiment_path / \
             "{}_{}".format(datetime.now().strftime("%b%d_%H-%M-%S"),
                            socket.gethostname())
@@ -265,17 +285,32 @@ class LstmDqnAgent:
         """
         train_config: Dict[str, Any] = self.config["training"]
 
+        # setup replay buffer -------------------------------------------------
+        buffer_args = train_config["replay_buffer"]
+        anneald_args = train_config["replay_buffer"]["beta_annealed_args"]
+        anneal_fn = linear_inc_fn(**anneald_args)
+        replay_memory = PrioritizedReplayMemory(capacity=buffer_args["capacity"],
+                                                batch_size=buffer_args["batch_size"],
+                                                alpha=buffer_args["alpha"],
+                                                start_beta=anneald_args["lower_bound"],
+                                                anneal_fn=anneal_fn)
+
+        # setup experiment directory ------------------------------------------
         try:
-            self._setup_experiment(self.config["checkpoint"], config_file)
+            self._setup_experiment(self.config["checkpoint"], config_file, anneal_fn)
         except FileExistsError:
             print("Experiment dir already exists, maybe change tag or set on_exist to ignore.")
             return
 
-        n_episodes = train_config["n_episodes"]
+        # define training params  ---------------------------------------------
+        n_update_steps = train_config["update_steps"]
         batch_size = train_config["batch_size"]
 
         update_after = train_config["update_after"]
-        tau = train_config["soft_update_tau"]
+
+        tau = train_config["target_update_tau"]
+        target_update_interval = train_config["target_update_interval"]
+
         discount = train_config["discount"]
         step_limit = train_config["max_steps_per_episode"]
 
@@ -284,15 +319,6 @@ class LstmDqnAgent:
         else:
             # default to mse
             loss_fn = nn.MSELoss(reduction="none")
-
-        # replay_memory = ReplayMemory(capacity=train_config["replay_capacity"],
-        #                              batch_size=train_config["replay_batch_size"])
-        buffer_args = train_config["replay_buffer"]
-        replay_memory = PrioritizedReplayMemory(capacity=buffer_args["capacity"],
-                                                batch_size=buffer_args["batch_size"],
-                                                alpha=buffer_args["alpha"],
-                                                start_beta=buffer_args["start_beta"],
-                                                annealing_duration=buffer_args["annealing_duration"])
 
         clip_grad_norm = train_config["optimizer"]["clip_grad_norm"]
 
@@ -305,13 +331,15 @@ class LstmDqnAgent:
         mov_steps = deque(maxlen=maxlen)
         mov_losses = deque(maxlen=maxlen)
 
-        start_time = time.time()
         save_frequency = self.config["checkpoint"]["save_frequency"]
-        n_batches = int(math.ceil(n_episodes / batch_size))
+
+        # start training  -----------------------------------------------------
+        start_time = time.time()        
         update_step = 0
+        batch_num = 0
         try:
-            with tqdm(range(1, n_batches + 1)) as pbar:
-                for batch_num in pbar:
+            with tqdm(range(1, n_update_steps + 1)) as pbar:
+                while update_step < n_update_steps:
                     self.lstm_dqn.train()
                     obs, infos = env.reset()
                     self.init(obs, infos)
@@ -363,14 +391,7 @@ class LstmDqnAgent:
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
                             loss, total_norm = self.update(
-                                discount, replay_memory, loss_fn, optimizer, tau, clip_grad_norm)
-
-                            # optimizer.zero_grad()
-                            # loss.backward(retain_graph=False)
-                            # total_norm = clip_grad_norm_(self.lstm_dqn.parameters(), clip_grad_norm)
-                            # optimizer.step()
-
-                            # self.update_target_model(tau)
+                                discount, replay_memory, loss_fn, optimizer, clip_grad_norm)
 
                             # save train statistics
                             mov_losses.append(loss)
@@ -379,6 +400,24 @@ class LstmDqnAgent:
                             self.writer.add_scalar("general/beta", replay_memory.beta, global_step=update_step)
                             self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=update_step)
                             update_step += 1
+                            pbar.update()
+
+                            # update alpha/beta/epsilon
+                            self.update_hyperparameter(update_step, replay_memory)
+
+                            # update target model
+                            if update_step % target_update_interval == 0:
+                                self.update_target_model(tau)
+
+                            # save model
+                            if update_step % save_frequency == 0:
+                                self.save_checkpoint("model_weights_{}.pt".format(update_step * batch_size))
+
+                        if update_step >= n_update_steps:
+                            break  # while
+
+                    if update_step >= n_update_steps:
+                        break  # for
 
                     # display/save statistics
                     normalized_scores = scores / max_scores
@@ -387,16 +426,13 @@ class LstmDqnAgent:
 
                     self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=batch_num)
                     self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
+                    batch_num += 1
 
                     pbar.set_postfix({
                         "eps": self.policy.eps,
                         "score": np.mean(mov_normalized_scores),
                         "steps": np.mean(mov_steps),
                         "loss": np.mean(mov_losses)})
-
-                    # save model
-                    if batch_num % save_frequency == 0:
-                        self.save_checkpoint("model_weights_{}.pt".format(batch_num * batch_size))
 
         except KeyboardInterrupt:
             print("Keyboard Interrupt")
@@ -408,7 +444,6 @@ class LstmDqnAgent:
                replay_memory: PrioritizedReplayMemory,
                loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
                optimizer: optim.Optimizer,
-               tau: float,
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
         assert not self.lstm_dqn_target.training
         assert self.lstm_dqn.training
@@ -458,9 +493,6 @@ class LstmDqnAgent:
         # update priorities
         replay_memory.update_priorities(indices, priorities)
 
-        # update target model
-        self.update_target_model(tau)
-
         # in server torch version total_norm is float
         if type(total_norm) == torch.Tensor:
             total_norm = total_norm.detach().cpu().item()
@@ -476,8 +508,6 @@ class LstmDqnAgent:
         for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             target_parameter.data.copy_(tau * parameter.data + (1.0 - tau) * target_parameter.data)
 
-    # def hard_update_target_model(self):
-    #     self.target_net_update_freq = 10
-    #     self.update_count = (self.update_count + 1) % self.target_net_update_freq
-    #     if self.update_count == 0:
-    #         self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())
+    def update_hyperparameter(self, update_step, replay_memory):
+        self.policy.update(update_step)
+        replay_memory.update_beta(update_step)
