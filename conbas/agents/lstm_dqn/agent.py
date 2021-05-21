@@ -401,6 +401,13 @@ class LstmDqnAgent:
                             self.writer.add_scalar("train/loss", loss, global_step=update_step)
                             self.writer.add_scalar("general/beta", replay_memory.beta, global_step=update_step)
                             self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=update_step)
+
+                            self.writer.add_scalar("replay_buffer/mean_reward", replay_memory.stats["reward_mean"],
+                                                   global_step=update_step)
+                            for r, c in replay_memory.stats["reward_cnt"].items():
+                                self.writer.add_scalar("replay_buffer/{:.2f}_cnt".format(r), c / len(replay_memory),
+                                                       global_step=update_step)
+
                             update_step += 1
                             pbar.update()
 

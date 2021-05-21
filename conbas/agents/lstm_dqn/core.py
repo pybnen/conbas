@@ -71,16 +71,36 @@ class PrioritizedReplayMemory(Memory):
         self.pos = 0
         self.eps = 1e-5
 
+        self.stats = {"reward_mean": 0.0, "reward_total": 0.0, "reward_cnt": {}}
+
     def append(self, transition: Transition) -> None:
         # calculate priorization
         self.priorities[self.pos] = np.max(self.priorities) if len(self) > 0 else 1.0
 
         # add transition to memory
+        old_reward = 0.0
         if len(self) < self.capacity:
-            self.memory.append(transition)
+            reward_total = self.stats["reward_total"] + transition.reward
+            self.memory.append(transition)            
         else:
+            old_reward = self.memory[self.pos].reward
+            reward_total = self.stats["reward_total"] + transition.reward - old_reward
             self.memory[self.pos] = transition
 
+        # add new reward count
+        if transition.reward != 0.0:
+            if transition.reward not in self.stats["reward_cnt"]:
+                self.stats["reward_cnt"][transition.reward] = 1
+            else:
+                self.stats["reward_cnt"][transition.reward] += 1
+
+        # remove old reward count
+        if old_reward != 0.0:
+            self.stats["reward_cnt"][old_reward] -= 1
+
+        self.stats["reward_total"] = reward_total
+        self.stats["reward_mean"] = reward_total / len(self)
+        
         self.pos = (self.pos + 1) % self.capacity
 
     def _get_distribution(self) -> np.ndarray:
