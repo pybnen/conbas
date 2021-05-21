@@ -85,6 +85,7 @@ class LstmDqnAgent:
         request_infos.verbs = True
         request_infos.admissible_commands = True
         request_infos.command_templates = True
+        request_infos.max_score = True
         return request_infos
 
     def init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
@@ -369,8 +370,9 @@ class LstmDqnAgent:
                         old_scores = scores
                         obs, scores, dones, infos = env.step(commands)
 
-                        # calculate immediate reward from scores
-                        rewards = np.array(scores) - old_scores
+                        # calculate immediate reward from scores and normalize it
+                        rewards = (np.array(scores) - old_scores) / max_scores
+                        rewards = np.array(rewards, dtype=np.float32)
 
                         _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
 
