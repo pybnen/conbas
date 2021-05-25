@@ -59,8 +59,8 @@ class LstmDqnAgent:
             assert torch.allclose(target_parameter.data, parameter.data)
 
         annealed_args = self.config["general"]["eps_annealed_args"]
-        self.anneal_fn = linear_decay_fn(annealed_args["eps_ub"], annealed_args["eps_lb"], annealed_args["eps_duration"])
-        self.policy = AnnealedEpsGreedyQPolicy(annealed_args["eps_ub"], device=self.device, anneal_fn=self.anneal_fn)
+        self.anneal_fn = linear_decay_fn(**annealed_args)
+        self.policy = AnnealedEpsGreedyQPolicy(annealed_args["upper_bound"], device=self.device, anneal_fn=self.anneal_fn)
 
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
         # policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}

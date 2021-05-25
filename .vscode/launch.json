@@ -57,7 +57,7 @@
             "module": "conbas.agents.lstm_dqn.train",
             "console": "integratedTerminal",
             "args": [
-                "${workspaceFolder}/conbas/agents/lstm_dqn/config.local.yaml"
+                "${workspaceFolder}/conbas/agents/lstm_dqn/config2.local.yaml"
             ]
         },
         {
