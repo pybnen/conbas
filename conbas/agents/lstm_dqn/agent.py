@@ -27,7 +27,7 @@ from textworld import EnvInfos
 from .model import LstmDqnModel
 from .policy import AnnealedEpsGreedyQPolicy
 from .utils import preprocess, words_to_ids, linear_decay_fn, linear_inc_fn
-from .core import Memory, ReplayMemory, Transition, TransitionBatch, PrioritizedReplayMemory
+from .core import Transition, TransitionBatch, PrioritizedReplayMemory
 
 
 class LstmDqnAgent:
@@ -60,7 +60,8 @@ class LstmDqnAgent:
 
         annealed_args = self.config["general"]["eps_annealed_args"]
         self.anneal_fn = linear_decay_fn(**annealed_args)
-        self.policy = AnnealedEpsGreedyQPolicy(annealed_args["upper_bound"], device=self.device, anneal_fn=self.anneal_fn)
+        self.policy = AnnealedEpsGreedyQPolicy(
+            annealed_args["upper_bound"], device=self.device, anneal_fn=self.anneal_fn)
 
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
         # policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}
