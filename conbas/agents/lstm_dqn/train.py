@@ -15,10 +15,10 @@ import numpy as np
 from .agent import LstmDqnAgent
 
 torch.backends.cudnn.benchmark = False
-try:
-    torch.use_deterministic_algorithms()
-except AttributeError as e:
-    print(e)
+# try:
+#     torch.use_deterministic_algorithms(True)
+# except AttributeError as e:
+#     print(e)
 
 
 def build_parser():
