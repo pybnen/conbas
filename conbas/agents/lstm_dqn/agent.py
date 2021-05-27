@@ -421,7 +421,7 @@ class LstmDqnAgent:
 
                             # save model
                             if update_step % save_frequency == 0:
-                                self.save_checkpoint("model_weights_{}.pt".format(update_step * batch_size))
+                                self.save_checkpoint("model_weights_{}.pt".format(update_step))
 
                         if update_step >= n_update_steps:
                             break  # while

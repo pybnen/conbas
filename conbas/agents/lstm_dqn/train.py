@@ -7,7 +7,18 @@ import gym
 import textworld
 import textworld.gym
 
+# import for seeding randomness
+import random
+import torch
+import numpy as np
+
 from .agent import LstmDqnAgent
+
+torch.backends.cudnn.benchmark = False
+try:
+    torch.use_deterministic_algorithms()
+except AttributeError as e:
+    print(e)
 
 
 def build_parser():
@@ -15,6 +26,7 @@ def build_parser():
     parser.add_argument("config_file", help="Path to config file.")
     parser.add_argument("--tag", "-t", type=str, help="Overwrite experiment tag.")
     parser.add_argument("--desc", "-d", type=str, help="Overwrite experiment description.")
+    parser.add_argument("--seed", "-s", type=int, required=True, help="Seed for pseudo-random-generation.")
     return parser
 
 
@@ -35,8 +47,17 @@ def get_word_vocab(vocab_file: str) -> List[str]:
     return word_vocab
 
 
+def set_rng_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    return np.random.default_rng(seed)
+
+
 def train():
     args = build_parser().parse_args()
+    np_rng = set_rng_seed(args.seed)
 
     with open(args.config_file, "r") as fp:
         config = yaml.load(fp, Loader=yaml.SafeLoader)
@@ -45,6 +66,8 @@ def train():
         config["checkpoint"]["experiment_tag"] = args.tag
     if args.desc is not None:
         config["checkpoint"]["experiment_description"] = args.desc
+
+    config["general"]["seed"] = args.seed
 
     # print config
     print(f"Use configuration from '{args.config_file}':")
@@ -69,32 +92,6 @@ def train():
                                           name="training")
     env = gym.make(env_id)
     agent.train(env, args.config_file)
-
-    # obs, infos = env.reset()
-    # obs = ["The End Is Never... ", "The End."]
-    # infos = {
-    #    "inventory": ["", ""],
-    #    "description": ["", "In the room is nothing."],
-    #    "extra.recipe": ["", ""]
-    # }
-    # batch_size = len(obs)
-    # scores = [0] * batch_size
-    # dones = [False] * batch_size
-    # agent.init(obs, infos)
-
-    # step 1
-    # commands = agent.act(obs, scores, dones, infos)
-    # for o, c in zip(obs, commands):
-    #     print(o)
-    #     print(c)
-    # obs, scores, dones, infos = env.step(commands)
-
-    # step 2
-    # commands = agent.act(obs, scores, dones, infos)
-    # for o, c in zip(obs, commands):
-    #     print(o)
-    #     print(c)
-    # obs, scores, dones, infos = env.step(commands)
 
 
 if __name__ == "__main__":
