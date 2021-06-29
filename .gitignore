@@ -282,6 +282,9 @@ $RECYCLE.BIN/
 
 ### my ignores ###
 
+# do ignore launch.json
+.vscode/launch.json
+
 # ignore datasets
 data/*
 
