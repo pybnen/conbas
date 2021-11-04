@@ -47,7 +47,7 @@ def get_agent(args):
     return agent
 
 
-def render_state(obs, infos, agent):
+def render_state(obs, infos, agent, scores, max_score):
     input_tensor, input_lengths, _ = agent.extract_input(obs, infos, agent.prev_commands)
     with torch.no_grad():
         q_values = agent.q_values(input_tensor, input_lengths, agent.lstm_dqn)
@@ -58,13 +58,15 @@ def render_state(obs, infos, agent):
     q_values_soft = np.exp(q_values) / np.exp(q_values).sum()
 
     print(obs[0])
+    print("[Score: {}/{} ({})]".format(scores[0], max_score, scores[0] / max_score))
+
     for i, (cmd, q_value, q_value_soft) in enumerate(zip(agent.commands, q_values[0], q_values_soft[0])):
         if cmd in infos["admissible_commands"][0]:
             cmd = f"*{cmd}*"
         if argmax == i:
             cmd = f"{cmd} <-----"
 
-        print(f"{i+1}. [{q_value:.2f}/{q_value_soft:.2f}] {cmd}")
+        print(f"{i+1}. [{q_value:.2f}/{q_value_soft:.4f}] {cmd}")
 
     print("--------------------------")
     command = input(f"({agent.commands[argmax]}) > ")
@@ -99,7 +101,7 @@ def main():
 
     n_moves = 0
     while not all(dones):
-        command = render_state(obs, infos, agent)
+        command = render_state(obs, infos, agent, scores, max_score)
         commands = [command]
         agent.prev_commands = commands
 

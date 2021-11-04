@@ -81,7 +81,7 @@ class PrioritizedReplayMemory(Memory):
         old_reward = 0.0
         if len(self) < self.capacity:
             reward_total = self.stats["reward_total"] + transition.reward
-            self.memory.append(transition)            
+            self.memory.append(transition)
         else:
             old_reward = self.memory[self.pos].reward
             reward_total = self.stats["reward_total"] + transition.reward - old_reward
@@ -100,7 +100,7 @@ class PrioritizedReplayMemory(Memory):
 
         self.stats["reward_total"] = reward_total
         self.stats["reward_mean"] = reward_total / len(self)
-        
+
         self.pos = (self.pos + 1) % self.capacity
 
     def _get_distribution(self) -> np.ndarray:
