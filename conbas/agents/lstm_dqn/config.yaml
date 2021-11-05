@@ -5,27 +5,30 @@ general:
   commands_files:
     - "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_1.txt"
   vocab_file: "conbas/agents/lstm_dqn/vocab.txt"
-  linear_annealed_args:
-    start_eps: 1.0
-    end_eps: 0.05
-    duration: 12_000
+  eps_annealed_args:
+    upper_bound: 1.0
+    lower_bound: 0.02
+    duration: 75_000
 training:
-  n_episodes: 16_000
-  batch_size: 2
-  max_steps_per_episode: 7
-  loss_fn: "mse"
+  update_steps: 100_000
+  batch_size: 16
+  max_steps_per_episode: 120
+  loss_fn: "smooth_l1"
   replay_buffer:
-    batch_size: 16
-    capacity: 30_000
-    alpha: 0.6
-    start_beta: 0.4
-    annealing_duration: 12_000
-  update_after: 100
-  soft_update_tau: 0.001
-  discount: 0.99
+    batch_size: 256
+    capacity: 90_000
+    alpha: 0.6    
+    beta_annealed_args:
+      upper_bound: 1.0
+      lower_bound: 0.4
+      duration: 50_000
+  update_after: 256
+  target_update_tau: 0.001
+  target_update_interval: 5
+  discount: 0.9
   optimizer:
-    lr: 0.001
-    clip_grad_norm: 5.
+    lr: 0.00001
+    clip_grad_norm: 0.75
 model:
   embedding_size: 64
   representation_rnn:
@@ -36,8 +39,8 @@ model:
     - 128                 # first number of hiddens must be the same as representation_rnn hidden_size
     - 64
 checkpoint:
-  on_exist: "ignore"
-  experiments_path: "experiments/"
-  experiment_tag: "lstm_dqn"
-  experiment_description: "Train the lstm dqn agent on Saladworld level 1."
-  save_frequency: 10
+  on_exist: "delete"
+  experiments_path: "experiments/lvl1/"
+  experiment_tag: "s120"
+  experiment_description: "lvl 1, 120 steps"
+  save_frequency: 10_000
