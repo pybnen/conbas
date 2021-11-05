@@ -257,19 +257,21 @@ class LstmDqnAgent:
         with open(self.experiment_path / "agent_config.yaml", "w") as fp:
             fp.write(yaml.dump(self.config))
 
+        expected_update_steps = self.config["training"]["traning_steps"] // self.config["training"]["batch_size"]
+
         # plot eps decay
         fig, ax = plt.subplots(figsize=(15, 7))
-        plt.xlabel("update steps")
+        plt.xlabel("expected update steps")
         plt.ylabel("eps")
-        ax.plot([self.anneal_fn(s) for s in range(0, self.config["training"]["update_steps"])])
+        ax.plot([self.anneal_fn(s) for s in range(0, expected_update_steps)])
         fig.savefig(self.experiment_path / "annealed_eps.png")
         plt.close(fig)
 
         # plot beta anneal
         fig, ax = plt.subplots(figsize=(15, 7))
-        plt.xlabel("update steps")
+        plt.xlabel("expected update steps")
         plt.ylabel("beta")
-        ax.plot([beta_anneal_fn(s) for s in range(0, self.config["training"]["update_steps"])])
+        ax.plot([beta_anneal_fn(s) for s in range(0, expected_update_steps)])
         fig.savefig(self.experiment_path / "annealed_beta.png")
         plt.close(fig)
 
@@ -305,8 +307,7 @@ class LstmDqnAgent:
             return
 
         # define training params  ---------------------------------------------
-        n_update_steps = train_config["update_steps"]
-        batch_size = train_config["batch_size"]
+        max_training_steps = train_config["traning_steps"]
 
         update_after = train_config["update_after"]
 
@@ -336,12 +337,13 @@ class LstmDqnAgent:
         save_frequency = self.config["checkpoint"]["save_frequency"]
 
         # start training  -----------------------------------------------------
-        start_time = time.time()        
+        start_time = time.time()
         update_step = 0
-        batch_num = 0
+        old_traning_steps = 0
+        traning_steps = 0   # env interactions
         try:
-            with tqdm(range(1, n_update_steps + 1)) as pbar:
-                while update_step < n_update_steps:
+            with tqdm(range(1, max_training_steps + 1)) as pbar:
+                while traning_steps < max_training_steps:
                     self.lstm_dqn.train()
                     obs, infos = env.reset()
                     self.init(obs, infos)
@@ -363,6 +365,9 @@ class LstmDqnAgent:
                     while not all(batch_finished):
                         # increment step only if env is not finished
                         steps = [step + int(not finished) for step, finished in zip(steps, batch_finished)]
+
+                        # count interactions with environment
+                        traning_steps += sum([int(not finished) for finished in batch_finished])
 
                         commands, command_indices, input_ids = self.act(obs, infos)
                         # move command_indices to cpu befor storing them in replay buffer
@@ -392,25 +397,26 @@ class LstmDqnAgent:
                                 replay_memory.append(
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
-                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) > update_after:
+                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after:
                             loss, total_norm = self.update(
                                 discount, replay_memory, loss_fn, optimizer, clip_grad_norm)
 
                             # save train statistics
                             mov_losses.append(loss)
-                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=update_step)
-                            self.writer.add_scalar("train/loss", loss, global_step=update_step)
-                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=update_step)
-                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=update_step)
+                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=traning_steps)
+                            self.writer.add_scalar("train/loss", loss, global_step=traning_steps)
+                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=traning_steps)
+                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=traning_steps)
 
                             self.writer.add_scalar("replay_buffer/mean_reward", replay_memory.stats["reward_mean"],
-                                                   global_step=update_step)
+                                                   global_step=traning_steps)
                             for r, c in replay_memory.stats["reward_cnt"].items():
                                 self.writer.add_scalar("replay_buffer/{:.2f}_cnt".format(r), c / len(replay_memory),
-                                                       global_step=update_step)
+                                                       global_step=traning_steps)
 
                             update_step += 1
-                            pbar.update()
+                            pbar.update(n=traning_steps - old_traning_steps)
+                            old_traning_steps = traning_steps
 
                             # update alpha/beta/epsilon
                             self.update_hyperparameter(update_step, replay_memory)
@@ -423,20 +429,16 @@ class LstmDqnAgent:
                             if update_step % save_frequency == 0:
                                 self.save_checkpoint("model_weights_{}.pt".format(update_step))
 
-                        if update_step >= n_update_steps:
-                            break  # while
-
-                    if update_step >= n_update_steps:
-                        break  # for
+                        if traning_steps >= max_training_steps:
+                            break  # while not finished
 
                     # display/save statistics
                     normalized_scores = scores / max_scores
                     mov_normalized_scores.extend(normalized_scores.tolist())
                     mov_steps.extend(steps)
 
-                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=batch_num)
-                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=batch_num)
-                    batch_num += 1
+                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=traning_steps)
+                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=traning_steps)
 
                     pbar.set_postfix({
                         "eps": self.policy.eps,

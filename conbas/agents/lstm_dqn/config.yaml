@@ -10,7 +10,7 @@ general:
     lower_bound: 0.02
     duration: 75_000
 training:
-  update_steps: 100_000
+  traning_steps: 1_600_000
   batch_size: 16
   max_steps_per_episode: 120
   loss_fn: "smooth_l1"
