@@ -12,7 +12,9 @@ import spacy
 from tqdm import tqdm
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 import torch
 import torch.cuda
 import torch.nn as nn
