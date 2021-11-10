@@ -342,10 +342,10 @@ class LstmDqnAgent:
         start_time = time.time()
         update_step = 0
         old_traning_steps = 0
-        traning_steps = 0   # env interactions
+        training_steps = 0   # env interactions
         try:
             with tqdm(range(1, max_training_steps + 1)) as pbar:
-                while traning_steps < max_training_steps:
+                while training_steps < max_training_steps:
                     self.lstm_dqn.train()
                     obs, infos = env.reset()
                     self.init(obs, infos)
@@ -369,7 +369,7 @@ class LstmDqnAgent:
                         steps = [step + int(not finished) for step, finished in zip(steps, batch_finished)]
 
                         # count interactions with environment
-                        traning_steps += sum([int(not finished) for finished in batch_finished])
+                        training_steps += sum([int(not finished) for finished in batch_finished])
 
                         commands, command_indices, input_ids = self.act(obs, infos)
                         # move command_indices to cpu befor storing them in replay buffer
@@ -405,20 +405,20 @@ class LstmDqnAgent:
 
                             # save train statistics
                             mov_losses.append(loss)
-                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=traning_steps)
-                            self.writer.add_scalar("train/loss", loss, global_step=traning_steps)
-                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=traning_steps)
-                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=traning_steps)
+                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=training_steps)
+                            self.writer.add_scalar("train/loss", loss, global_step=training_steps)
+                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
+                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=training_steps)
 
                             self.writer.add_scalar("replay_buffer/mean_reward", replay_memory.stats["reward_mean"],
-                                                   global_step=traning_steps)
+                                                   global_step=training_steps)
                             for r, c in replay_memory.stats["reward_cnt"].items():
                                 self.writer.add_scalar("replay_buffer/{:.2f}_cnt".format(r), c / len(replay_memory),
-                                                       global_step=traning_steps)
+                                                       global_step=training_steps)
 
                             update_step += 1
-                            pbar.update(n=traning_steps - old_traning_steps)
-                            old_traning_steps = traning_steps
+                            pbar.update(n=training_steps - old_traning_steps)
+                            old_traning_steps = training_steps
 
                             # update alpha/beta/epsilon
                             self.update_hyperparameter(update_step, replay_memory)
@@ -431,7 +431,7 @@ class LstmDqnAgent:
                             if update_step % save_frequency == 0:
                                 self.save_checkpoint("model_weights_{}.pt".format(update_step))
 
-                        if traning_steps >= max_training_steps:
+                        if training_steps >= max_training_steps:
                             break  # while not finished
 
                     # display/save statistics
@@ -439,8 +439,8 @@ class LstmDqnAgent:
                     mov_normalized_scores.extend(normalized_scores.tolist())
                     mov_steps.extend(steps)
 
-                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=traning_steps)
-                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=traning_steps)
+                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=training_steps)
+                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=training_steps)
 
                     pbar.set_postfix({
                         "eps": self.policy.eps,
