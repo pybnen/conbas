@@ -312,6 +312,7 @@ class LstmDqnAgent:
         max_training_steps = train_config["traning_steps"]
 
         update_after = train_config["update_after"]
+        update_per_k_game_steps = train_config["update_per_k_game_steps"]
 
         tau = train_config["target_update_tau"]
         target_update_interval = train_config["target_update_interval"]
@@ -331,10 +332,11 @@ class LstmDqnAgent:
                             self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
-        maxlen = 500
-        mov_normalized_scores = deque(maxlen=maxlen)
-        mov_steps = deque(maxlen=maxlen)
-        mov_losses = deque(maxlen=maxlen)
+        maxlen = 100
+        score_avg = deque(maxlen=maxlen)
+        step_avg = deque(maxlen=maxlen)
+        loss_avg = deque(maxlen=maxlen)
+        grad_norm_avg = deque(maxlen=maxlen)
 
         save_frequency = self.config["checkpoint"]["save_frequency"]
 
@@ -343,6 +345,8 @@ class LstmDqnAgent:
         update_step = 0
         old_traning_steps = 0
         training_steps = 0   # env interactions
+        epoch = 0
+
         try:
             with tqdm(range(1, max_training_steps + 1)) as pbar:
                 while training_steps < max_training_steps:
@@ -353,6 +357,9 @@ class LstmDqnAgent:
                     scores = np.array([0] * len(obs))
                     max_scores = np.array(infos["max_score"])
                     steps = [0] * len(obs)
+                    current_game_step = 0
+                    losses = []
+                    grad_norms = []
 
                     # distinguish between:
                     # - done:                       env won/lost
@@ -399,27 +406,16 @@ class LstmDqnAgent:
                                 replay_memory.append(
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
-                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after:
+                        if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after \
+                                and current_game_step % update_per_k_game_steps:
                             loss, total_norm = self.update(
                                 discount, replay_memory, loss_fn, optimizer, clip_grad_norm)
 
                             # save train statistics
-                            mov_losses.append(loss)
-                            self.writer.add_scalar("train/gradient_total_norm", total_norm, global_step=training_steps)
-                            self.writer.add_scalar("train/loss", loss, global_step=training_steps)
-                            self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
-                            self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=training_steps)
-
-                            self.writer.add_scalar("replay_buffer/mean_reward", replay_memory.stats["reward_mean"],
-                                                   global_step=training_steps)
-                            for r, c in replay_memory.stats["reward_cnt"].items():
-                                self.writer.add_scalar("replay_buffer/{:.2f}_cnt".format(r), c / len(replay_memory),
-                                                       global_step=training_steps)
+                            losses.append(loss)
+                            grad_norms.append(total_norm)
 
                             update_step += 1
-                            pbar.update(n=training_steps - old_traning_steps)
-                            old_traning_steps = training_steps
-
                             # update alpha/beta/epsilon
                             self.update_hyperparameter(update_step, replay_memory)
 
@@ -431,22 +427,43 @@ class LstmDqnAgent:
                             if update_step % save_frequency == 0:
                                 self.save_checkpoint("model_weights_{}.pt".format(update_step))
 
+                        current_game_step += 1
+
                         if training_steps >= max_training_steps:
                             break  # while not finished
 
-                    # display/save statistics
-                    normalized_scores = scores / max_scores
-                    mov_normalized_scores.extend(normalized_scores.tolist())
-                    mov_steps.extend(steps)
+                    score_avg.append(np.mean(scores))  # scores contains final scores
+                    step_avg.append(np.mean(steps))
+                    loss_avg.append(np.mean(losses))
+                    grad_norm_avg.append(np.mean(grad_norms))
 
-                    self.writer.add_scalar("train/score", np.mean(normalized_scores), global_step=training_steps)
-                    self.writer.add_scalar("train/steps", np.mean(steps), global_step=training_steps)
+                    # display/save statistics
+                    self.writer.add_scalar('avg_score', np.mean(score_avg) / max_scores[0], training_steps)
+                    self.writer.add_scalar('curr_score', score_avg[-1] / max_scores[0], training_steps)
+
+                    self.writer.add_scalar('avg_step', np.mean(step_avg), training_steps)
+                    self.writer.add_scalar('curr_step', step_avg[-1], training_steps)
+
+                    self.writer.add_scalar('avg_loss', np.mean(loss_avg), training_steps)
+                    self.writer.add_scalar('curr_loss', loss_avg[-1], training_steps)
+
+                    self.writer.add_scalar("curr_gradient_total_norm", np.mean(grad_norm_avg), global_step=training_steps)
+                    self.writer.add_scalar("curr_gradient_total_norm", grad_norm_avg[-1], global_step=training_steps)
+
+                    self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
+                    self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=training_steps)
+
+                    pbar.update(n=training_steps - old_traning_steps)
+                    old_traning_steps = training_steps
 
                     pbar.set_postfix({
+                        "epoch": epoch,
                         "eps": self.policy.eps,
-                        "score": np.mean(mov_normalized_scores),
-                        "steps": np.mean(mov_steps),
-                        "loss": np.mean(mov_losses)})
+                        "score": np.mean(score_avg) / max_scores[0],
+                        "steps": np.mean(step_avg),
+                        "loss": np.mean(loss_avg)})
+                    
+                    epoch += 1
 
         except KeyboardInterrupt:
             print("Keyboard Interrupt")

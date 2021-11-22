@@ -3,40 +3,43 @@ general:
   game_files:
     - "data/SaladWorld/level_1.ulx"
   commands_files:
-    - "conbas/agents/lstm_dqn/commands/cmd_saladworld_level_1.txt"
-  vocab_file: "conbas/agents/lstm_dqn/vocab.txt"
+    - "data/SaladWorld/level_1_cmd.ulx"
+  vocab_file: "data/SaladWorld/vocab.txt"
   eps_annealed_args:
     upper_bound: 1.0
-    lower_bound: 0.02
+    lower_bound: 0.2
     duration: 75_000
+
 training:
-  traning_steps: 1_600_000
-  batch_size: 16
-  max_steps_per_episode: 120
+  traning_steps: 1_200_000
+  batch_size: 10
+  max_steps_per_episode: 50
   loss_fn: "smooth_l1"
   replay_buffer:
-    batch_size: 256
-    capacity: 90_000
+    batch_size: 32
+    capacity: 500_000
     alpha: 0.6    
     beta_annealed_args:
       upper_bound: 1.0
       lower_bound: 0.4
       duration: 50_000
   update_after: 256
+  update_per_k_game_steps: 4
   target_update_tau: 0.001
   target_update_interval: 5
   discount: 0.9
   optimizer:
-    lr: 0.00001
-    clip_grad_norm: 0.75
+    lr: 0.001
+    clip_grad_norm: 5
 model:
-  embedding_size: 64
+  embedding_size: 20
   representation_rnn:
-    input_size: 64        # must be the sampe as embedding_size
-    hidden_size: 128
+    input_size: 20        # must be the sampe as embedding_size
+    hidden_size: 100
     num_layers: 1
   command_scorer_net:
-    - 128                 # first number of hiddens must be the same as representation_rnn hidden_size
+    - 100                 # first number of hiddens must be the same as representation_rnn hidden_size
+    - 64
     - 64
 checkpoint:
   on_exist: "delete"
