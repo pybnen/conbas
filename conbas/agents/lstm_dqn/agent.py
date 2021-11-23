@@ -26,7 +26,7 @@ from torch.utils.tensorboard import SummaryWriter
 import gym
 from textworld import EnvInfos
 
-from .model import LstmDqnModel
+from .model import LstmDqnModel, FastLstmDqnModel
 from .policy import AnnealedEpsGreedyQPolicy
 from .utils import preprocess, words_to_ids, linear_decay_fn, linear_inc_fn
 from .core import Transition, TransitionBatch, PrioritizedReplayMemory
@@ -48,12 +48,12 @@ class LstmDqnAgent:
         self.prev_commands = []
         self.word_vocab = word_vocab
         self.experiment_path = None
-        self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
+        self.lstm_dqn = FastLstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
 
         # NOTE: This would be the place to load a pretrained model
 
         if self.config["training"]["use_target_network"]:
-            self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
+            self.lstm_dqn_target = FastLstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
             # set target network to eval mode
             self.lstm_dqn_target.eval()
 
@@ -106,7 +106,7 @@ class LstmDqnAgent:
         """
         self.prev_commands = ["" for _ in range(len(obs))]
 
-    def pad_input_ids(self, input_ids: List[List[int]]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def pad_input_ids(self, input_ids: List[List[int]]) -> torch.Tensor:
         """Pad a list of sequences, the sequence contains ids that are the input for the agent
 
         Args:
@@ -117,13 +117,12 @@ class LstmDqnAgent:
             input_lengths: lenght of each unpadded sequence
         """
         input_tensor_list = [torch.tensor(item) for item in input_ids]
-        input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"]).to(self.device)
-        input_lengths = torch.tensor([len(seq) for seq in input_tensor_list])
-        return input_tensor, input_lengths
+        input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"], batch_first=True).to(self.device)
+        return input_tensor
 
     def extract_input(self, obs: List[str],
                       infos: Dict[str, List[Any]],
-                      prev_commands: List[str]) -> Tuple[torch.Tensor, torch.Tensor, List[List[int]]]:
+                      prev_commands: List[str]) -> Tuple[torch.Tensor, List[List[int]]]:
         """Extracts DQN network input, from current state information
 
         Args:
@@ -158,11 +157,11 @@ class LstmDqnAgent:
                                                              inventory_ids,
                                                              observation_ids,
                                                              prev_command_ids)]
-        input_tensor, input_lengths = self.pad_input_ids(input_ids)
-        return input_tensor, input_lengths, input_ids
+        input_tensor = self.pad_input_ids(input_ids)
+        return input_tensor, input_ids
 
-    def q_values(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor,
-                 lstm_dqn_model: LstmDqnModel) -> torch.Tensor:
+    def q_values(self, input_tensor: torch.Tensor,
+                 lstm_dqn_model: FastLstmDqnModel) -> torch.Tensor:
         """Calculate Q values for all commands for the current input
 
         Args:
@@ -174,11 +173,10 @@ class LstmDqnAgent:
             command_scores: tensor fo shape (batch_size, n_commands) for each state a list
                 containing the scores of each command in that state
         """
-        state_representations = lstm_dqn_model.representation_generator(input_tensor, input_lengths)
+        state_representations = lstm_dqn_model.representation_generator(input_tensor)
         return lstm_dqn_model.command_scorer(state_representations)
 
-    def act(self, obs: List[str], infos: Dict[str, List[Any]]
-            ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
+    def act(self, input_tensor: torch.Tensor) -> Tuple[List[str], torch.Tensor]:
         """Returns command for the current observation and information from the environment.
 
         Args:
@@ -190,11 +188,9 @@ class LstmDqnAgent:
             command_indices: tensor of shape (batch_size, ), contains the command index for each state
             input_ids: list of sequences containing the ids that describe the input
         """
-        input_tensor, input_lengths, input_ids = self.extract_input(obs, infos, self.prev_commands)
-
         # no need to build a computation graph here
         with torch.no_grad():
-            q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn)
+            q_values = self.q_values(input_tensor, self.lstm_dqn)
         assert not q_values.requires_grad
 
         # command selection
@@ -204,7 +200,7 @@ class LstmDqnAgent:
         commands = [self.commands[i] for i in command_indices]
         self.prev_commands = commands
 
-        return commands, command_indices, input_ids
+        return commands, command_indices
 
     def save_checkpoint(self, filename: str) -> None:
         """Save checkpoint to experiment path.
@@ -377,6 +373,9 @@ class LstmDqnAgent:
                     batch_finished = [False] * len(obs)
                     not_or_recently_finished = [True] * len(obs)
 
+                    # do extract info
+                    input_tensor, input_ids = self.extract_input(obs, infos, self.prev_commands)
+
                     while not all(batch_finished):
                         # increment step only if env is not finished
                         steps = [step + int(not finished) for step, finished in zip(steps, batch_finished)]
@@ -384,7 +383,7 @@ class LstmDqnAgent:
                         # count interactions with environment
                         training_steps += sum([int(not finished) for finished in batch_finished])
 
-                        commands, command_indices, input_ids = self.act(obs, infos)
+                        commands, command_indices = self.act(input_tensor)
                         # move command_indices to cpu befor storing them in replay buffer
                         command_indices = command_indices.cpu()
 
@@ -395,7 +394,7 @@ class LstmDqnAgent:
                         rewards = (np.array(scores) - old_scores) / max_scores
                         rewards = np.array(rewards, dtype=np.float32)
 
-                        _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
+                        input_tensor, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
 
                         step_limit_reached = [step >= step_limit for step in steps]
                         batch_finished = [done or reached for done, reached in zip(dones, step_limit_reached)]
@@ -494,15 +493,15 @@ class LstmDqnAgent:
         batch = TransitionBatch(*zip(*transitions))  # type: ignore
 
         # create tensors for update
-        input_tensor, input_lengths = self.pad_input_ids(batch.observation)
+        input_tensor = self.pad_input_ids(batch.observation)
         command_indices = torch.stack(batch.command_index, dim=0).to(self.device)
         rewards = torch.tensor(batch.reward, dtype=torch.float32, device=self.device)
-        next_input_tensor, next_input_lengths = self.pad_input_ids(batch.next_observation)
+        next_input_tensor = self.pad_input_ids(batch.next_observation)
         non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32, device=self.device)
         weights = torch.from_numpy(weights).to(device=self.device)
 
         # q_values from policy network, Q(obs, a, phi)
-        q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(
+        q_values = self.q_values(input_tensor, self.lstm_dqn).gather(
             dim=1, index=command_indices.unsqueeze(-1)).squeeze(-1)
         assert q_values.requires_grad
 
@@ -510,15 +509,15 @@ class LstmDqnAgent:
         with torch.no_grad():
             if self.config["training"]["use_double_DQN"]:
                 # argmax_a Q(next_obs, a, phi)
-                _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
+                _, argmax_a = self.q_values(next_input_tensor, self.lstm_dqn).max(dim=1)
                 # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
-                next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
+                next_q_values = self.q_values(next_input_tensor, self.lstm_dqn_target).gather(
                     dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
                 assert not next_q_values.requires_grad
 
             else:
                 # in this case lstm_dqn === lstm_dqn
-                next_q_values, _ = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).max(dim=1)
+                next_q_values, _ = self.q_values(next_input_tensor, self.lstm_dqn_target).max(dim=1)
 
         # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
         target = rewards + non_terminal_mask * discount * next_q_values.detach()
