@@ -426,7 +426,7 @@ class LstmDqnAgent:
                             self.update_hyperparameter(update_step, replay_memory)
 
                             # update target model
-                            if train_config["use_target_newtork"] and update_step % target_update_interval == 0:
+                            if train_config["use_target_network"] and update_step % target_update_interval == 0:
                                 self.update_target_model(tau)
 
                             # save model
