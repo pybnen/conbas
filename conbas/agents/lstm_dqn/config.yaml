@@ -3,7 +3,7 @@ general:
   game_files:
     - "data/SaladWorld/level_1.ulx"
   commands_files:
-    - "data/SaladWorld/level_1_cmd.ulx"
+    - "data/SaladWorld/level_1_cmd.txt"
   vocab_file: "data/SaladWorld/vocab.txt"
   eps_annealed_args:
     upper_bound: 1.0
