@@ -15,6 +15,9 @@ training:
   batch_size: 10
   max_steps_per_episode: 50
   loss_fn: "smooth_l1"
+  use_target_network: true
+  use_double_DQN: true
+
   replay_buffer:
     batch_size: 32
     capacity: 500_000
@@ -23,14 +26,17 @@ training:
       upper_bound: 1.0
       lower_bound: 0.4
       duration: 50_000
+  
   update_after: 256
   update_per_k_game_steps: 4
   target_update_tau: 0.001
   target_update_interval: 5
   discount: 0.9
+  
   optimizer:
     lr: 0.001
     clip_grad_norm: 5
+
 model:
   embedding_size: 20
   representation_rnn:
@@ -41,6 +47,7 @@ model:
     - 100                 # first number of hiddens must be the same as representation_rnn hidden_size
     - 64
     - 64
+
 checkpoint:
   on_exist: "delete"
   experiments_path: "experiments/lvl1/"

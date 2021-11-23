@@ -39,6 +39,8 @@ class LstmDqnAgent:
     ON_EXIST_ERR = "err"
 
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
+        assert not config["training"]["use_double_DQN"] or config["training"]["use_target_network"]
+        
         self.commands = commands
         self.config = config
         use_cuda = torch.cuda.is_available() and config["general"]["use_cuda"]
@@ -47,18 +49,22 @@ class LstmDqnAgent:
         self.word_vocab = word_vocab
         self.experiment_path = None
         self.lstm_dqn = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
-        self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
-        # set target network to eval mode
-        self.lstm_dqn_target.eval()
 
         # NOTE: This would be the place to load a pretrained model
 
-        # copy parameter from model to target model
-        self.update_target_model(tau=1.0)
+        if self.config["training"]["use_target_network"]:
+            self.lstm_dqn_target = LstmDqnModel(self.config["model"], commands, word_vocab, self.device).to(self.device)
+            # set target network to eval mode
+            self.lstm_dqn_target.eval()
 
-        # self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())
-        for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
-            assert torch.allclose(target_parameter.data, parameter.data)
+            # copy parameter from model to target model
+            self.update_target_model(tau=1.0)
+            # self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())
+            
+            for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
+                assert torch.allclose(target_parameter.data, parameter.data)
+        else:
+            self.lstm_dqn_target = self.lstm_dqn
 
         annealed_args = self.config["general"]["eps_annealed_args"]
         self.anneal_fn = linear_decay_fn(**annealed_args)
@@ -420,7 +426,7 @@ class LstmDqnAgent:
                             self.update_hyperparameter(update_step, replay_memory)
 
                             # update target model
-                            if update_step % target_update_interval == 0:
+                            if train_config["use_target_newtork"] and update_step % target_update_interval == 0:
                                 self.update_target_model(tau)
 
                             # save model
@@ -447,7 +453,8 @@ class LstmDqnAgent:
                     self.writer.add_scalar('avg_loss', np.mean(loss_avg), training_steps)
                     self.writer.add_scalar('curr_loss', loss_avg[-1], training_steps)
 
-                    self.writer.add_scalar("curr_gradient_total_norm", np.mean(grad_norm_avg), global_step=training_steps)
+                    self.writer.add_scalar("curr_gradient_total_norm", np.mean(grad_norm_avg),
+                                           global_step=training_steps)
                     self.writer.add_scalar("curr_gradient_total_norm", grad_norm_avg[-1], global_step=training_steps)
 
                     self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
@@ -462,7 +469,7 @@ class LstmDqnAgent:
                         "score": np.mean(score_avg) / max_scores[0],
                         "steps": np.mean(step_avg),
                         "loss": np.mean(loss_avg)})
-                    
+
                     epoch += 1
 
         except KeyboardInterrupt:
@@ -476,7 +483,6 @@ class LstmDqnAgent:
                loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
                optimizer: optim.Optimizer,
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
-        assert not self.lstm_dqn_target.training
         assert self.lstm_dqn.training
 
         transitions, weights, indices = replay_memory.sample()
@@ -502,14 +508,20 @@ class LstmDqnAgent:
 
         # no need to build a computation graph here
         with torch.no_grad():
-            # argmax_a Q(next_obs, a, phi)
-            _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
-            # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
-            next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
-                dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
-            assert not next_q_values.requires_grad
-            # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
-            target = rewards + non_terminal_mask * discount * next_q_values.detach()
+            if self.config["training"]["use_double_DQN"]:
+                # argmax_a Q(next_obs, a, phi)
+                _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn).max(dim=1)
+                # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
+                next_q_values = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).gather(
+                    dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
+                assert not next_q_values.requires_grad
+
+            else:
+                # in this case lstm_dqn === lstm_dqn
+                next_q_values, _ = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn_target).max(dim=1)
+
+        # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
+        target = rewards + non_terminal_mask * discount * next_q_values.detach()
 
         loss = loss_fn(q_values, target) * weights
         priorities = loss.detach().cpu().numpy()
