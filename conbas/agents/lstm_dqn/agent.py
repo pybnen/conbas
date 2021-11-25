@@ -418,7 +418,7 @@ class LstmDqnAgent:
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after \
-                                and current_game_step % update_per_k_game_steps:
+                                and current_game_step % update_per_k_game_steps == 0:
                             loss, total_norm = self.update(
                                 discount, replay_memory, loss_fn, optimizer, clip_grad_norm)
 
