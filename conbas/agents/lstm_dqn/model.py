@@ -13,11 +13,19 @@ class LstmDqnModel(nn.Module):
 
         self.config = config
         self.device = device
-        self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
-        # TODO support bi-directional rnn
-        self.representation_rnn = nn.GRU(**config["representation_rnn"])
 
-        linear_layer_hiddens = config["command_scorer_net"] + [len(commands)]
+        self.embedding_size = config["embedding_size"]
+        self.representation_hidden_size = config['representation_rnn']
+
+        self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
+
+        self.representation_rnn = nn.GRU(input_size=self.embedding_size,
+                                         hidden_size=self.representation_hidden_size[0],
+                                         num_layers=1)
+
+        linear_layer_hiddens = [self.representation_hidden_size[-1]] + \
+            config["command_scorer_net"] + [len(commands)]
+
         command_scorer_layers = []
         for i in range(len(config["command_scorer_net"])):
             input_size = linear_layer_hiddens[i]

@@ -1,9 +1,7 @@
 general:
   use_cuda: true
-  game_files:
-    - "data/SaladWorld/level_1.ulx"
-  commands_files:
-    - "data/SaladWorld/level_1_cmd.txt"
+  game_files: ["data/SaladWorld/level_1.ulx"]
+  commands_files: ["data/SaladWorld/level_1_cmd.txt"]
   vocab_file: "data/SaladWorld/vocab.txt"
   eps_annealed_args:
     upper_bound: 1.0
@@ -27,7 +25,7 @@ training:
       lower_bound: 0.4
       duration: 50_000
   
-  update_after: 256
+  update_after: 0
   update_per_k_game_steps: 4
   target_update_tau: 0.001
   target_update_interval: 5
@@ -39,14 +37,8 @@ training:
 
 model:
   embedding_size: 20
-  representation_rnn:
-    input_size: 20        # must be the sampe as embedding_size
-    hidden_size: 100
-    num_layers: 1
-  command_scorer_net:
-    - 100                 # first number of hiddens must be the same as representation_rnn hidden_size
-    - 64
-    - 64
+  representation_rnn: [100]
+  command_scorer_net: [64, 64]
 
 checkpoint:
   on_exist: "delete"
