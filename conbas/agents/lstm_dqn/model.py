@@ -27,7 +27,7 @@ class LstmDqnModel(nn.Module):
             config["command_scorer_net"] + [len(commands)]
 
         command_scorer_layers = []
-        for i in range(len(config["command_scorer_net"])):
+        for i in range(len(linear_layer_hiddens) - 1):
             input_size = linear_layer_hiddens[i]
             output_size = linear_layer_hiddens[i+1]
             command_scorer_layers.append(nn.Linear(input_size, output_size))
@@ -64,7 +64,7 @@ class LstmDqnModel(nn.Module):
         embed = self.embedding(input_tensor)
         packed = pack_padded_sequence(embed, input_lengths, enforce_sorted=False)
 
-        hidden = torch.zeros(1, len(input_lengths), self.config["representation_rnn"]["hidden_size"]).to(self.device)
+        hidden = torch.zeros(1, len(input_lengths), self.representation_hidden_size[-1]).to(self.device)
         output_packed, hidden = self.representation_rnn(packed, hidden)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
