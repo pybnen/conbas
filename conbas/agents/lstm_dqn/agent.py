@@ -114,8 +114,11 @@ class LstmDqnAgent:
             input_ids: list of sequences containing the ids that describe the input
 
         Returns:
-            input_tensor: padded tensor of input ids
-            input_lengths: lenght of each unpadded sequence
+            input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
+                for each game in the batch.
+                max_len: maximum length of game information
+                batch_size: number of games in batch
+            input_lengths: tensor of shape (batch_size) containing the length of each input sequence
         """
         input_tensor_list = [torch.tensor(item) for item in input_ids]
         input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"]).to(self.device)
@@ -124,7 +127,7 @@ class LstmDqnAgent:
 
     def extract_input(self, obs: List[str],
                       infos: Dict[str, List[Any]],
-                      prev_commands: List[str]) -> Tuple[torch.Tensor, torch.Tensor, List[List[int]]]:
+                      prev_commands: List[str]) -> List[List[int]]:
         """Extracts DQN network input, from current state information
 
         Args:
@@ -133,11 +136,6 @@ class LstmDqnAgent:
             prev_commands: previous command for each game
 
         Returns:
-            input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
-                for each game in the batch.
-                max_len: maximum length of game information
-                batch_size: number of games in batch
-            input_lengths: tensor of shape (batch_size) containing the length of each input sequence
             input_ids: list of sequences containing the ids that describe the input
         """
         inventory_tokens = [preproc(item, str_type='inventory', lower_case=True) for item in infos["inventory"]]
@@ -163,8 +161,8 @@ class LstmDqnAgent:
                                                              quest_id_list,
                                                              observation_ids,
                                                              prev_command_ids)]
-        input_tensor, input_lengths = self.pad_input_ids(input_ids)
-        return input_tensor, input_lengths, input_ids
+        # input_tensor, input_lengths = self.pad_input_ids(input_ids)
+        return input_ids
 
     def q_values(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor,
                  lstm_dqn_model: LstmDqnModel) -> torch.Tensor:
@@ -182,20 +180,17 @@ class LstmDqnAgent:
         state_representations = lstm_dqn_model.representation_generator(input_tensor, input_lengths)
         return lstm_dqn_model.command_scorer(state_representations)
 
-    def act(self, obs: List[str], infos: Dict[str, List[Any]]
-            ) -> Tuple[List[str], torch.Tensor, List[List[int]]]:
+    def act(self, input_ids: List[List[int]]) -> Tuple[List[str], torch.Tensor]:
         """Returns command for the current observation and information from the environment.
 
         Args:
-            obs: List that contains the current observation (=feedback) for each game
-            infos: additional (step) information for each game
+            input_ids: list of sequences containing the ids that describe the input
 
         Returns:
             commands: List of commands, one command per game in the batch
             command_indices: tensor of shape (batch_size, ), contains the command index for each state
-            input_ids: list of sequences containing the ids that describe the input
         """
-        input_tensor, input_lengths, input_ids = self.extract_input(obs, infos, self.prev_commands)
+        input_tensor, input_lengths = self.pad_input_ids(input_ids)
 
         # no need to build a computation graph here
         with torch.no_grad():
@@ -209,7 +204,7 @@ class LstmDqnAgent:
         commands = [self.commands[i] for i in command_indices]
         self.prev_commands = commands
 
-        return commands, command_indices, input_ids
+        return commands, command_indices
 
     def save_checkpoint(self, filename: str) -> None:
         """Save checkpoint to experiment path.
@@ -382,6 +377,9 @@ class LstmDqnAgent:
                     batch_finished = [False] * len(obs)
                     not_or_recently_finished = [True] * len(obs)
 
+                    # extract input information
+                    input_ids = self.extract_input(obs, infos, self.prev_commands)
+
                     while not all(batch_finished):
                         # increment step only if env is not finished
                         steps = [step + int(not finished) for step, finished in zip(steps, batch_finished)]
@@ -389,7 +387,7 @@ class LstmDqnAgent:
                         # count interactions with environment
                         training_steps += sum([int(not finished) for finished in batch_finished])
 
-                        commands, command_indices, input_ids = self.act(obs, infos)
+                        commands, command_indices = self.act(input_ids)
                         # move command_indices to cpu befor storing them in replay buffer
                         command_indices = command_indices.cpu()
 
@@ -400,7 +398,7 @@ class LstmDqnAgent:
                         rewards = (np.array(scores) - old_scores) / max_scores
                         rewards = np.array(rewards, dtype=np.float32)
 
-                        _, _, next_input_ids = self.extract_input(obs, infos, self.prev_commands)
+                        next_input_ids = self.extract_input(obs, infos, self.prev_commands)
 
                         step_limit_reached = [step >= step_limit for step in steps]
                         batch_finished = [done or reached for done, reached in zip(dones, step_limit_reached)]
@@ -416,6 +414,8 @@ class LstmDqnAgent:
                                 # done is True only if env is won/lost, not if step limit is reached
                                 replay_memory.append(
                                     Transition(input_id, command_index, reward, next_input_id, done))
+
+                        input_ids = next_input_ids
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after \
                                 and current_game_step % update_per_k_game_steps == 0:
