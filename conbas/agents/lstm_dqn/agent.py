@@ -95,6 +95,7 @@ class LstmDqnAgent:
         request_infos.admissible_commands = True
         request_infos.command_templates = True
         request_infos.max_score = True
+        request_infos.objective = True
         return request_infos
 
     def init(self, obs: List[str], infos: Dict[str, List[Any]]) -> None:
@@ -147,14 +148,18 @@ class LstmDqnAgent:
         prev_command_tokens = [preprocess(item, self.tokenizer) for item in prev_commands]
         prev_command_ids = [words_to_ids(tokens, self.word2id) for tokens in prev_command_tokens]
 
+        quest_tokens = [preprocess(item, self.tokenizer) for item in infos["objective"]]
+        quest_id_list = [words_to_ids(tokens, self.word2id) for tokens in quest_tokens]
+
         look_tokens = [preprocess(item, self.tokenizer) for item in infos["description"]]
         for i, l in enumerate(look_tokens):
             if len(l) == 0:
                 look_tokens[i] = ["end"]
         look_ids = [words_to_ids(tokens, self.word2id) for tokens in look_tokens]
 
-        input_ids = [_l + i + o + pc for _l, i, o, pc in zip(look_ids,
+        input_ids = [_l + i + q + o + pc for _l, i, q, o, pc in zip(look_ids,
                                                              inventory_ids,
+                                                             quest_id_list,
                                                              observation_ids,
                                                              prev_command_ids)]
         input_tensor = self.pad_input_ids(input_ids)
@@ -412,7 +417,7 @@ class LstmDqnAgent:
                                     Transition(input_id, command_index, reward, next_input_id, done))
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after \
-                                and current_game_step % update_per_k_game_steps:
+                                and current_game_step % update_per_k_game_steps == 0:
                             loss, total_norm = self.update(
                                 discount, replay_memory, loss_fn, optimizer, clip_grad_norm)
 
