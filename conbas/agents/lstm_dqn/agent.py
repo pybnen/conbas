@@ -28,7 +28,7 @@ from textworld import EnvInfos
 
 from .model import LstmDqnModel
 from .policy import AnnealedEpsGreedyQPolicy
-from .utils import preprocess, words_to_ids, linear_decay_fn, linear_inc_fn
+from .utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn
 from .core import Transition, TransitionBatch, PrioritizedReplayMemory
 
 
@@ -140,19 +140,19 @@ class LstmDqnAgent:
             input_lengths: tensor of shape (batch_size) containing the length of each input sequence
             input_ids: list of sequences containing the ids that describe the input
         """
-        inventory_tokens = [preprocess(item, self.tokenizer) for item in infos["inventory"]]
+        inventory_tokens = [preproc(item, str_type='inventory', lower_case=True) for item in infos["inventory"]]
         inventory_ids = [words_to_ids(tokens, self.word2id) for tokens in inventory_tokens]
 
-        observation_tokens = [preprocess(item, self.tokenizer) for item in obs]
+        observation_tokens = [preproc(item, str_type='feedback', lower_case=True)  for item in obs]
         observation_ids = [words_to_ids(tokens, self.word2id) for tokens in observation_tokens]
 
-        prev_command_tokens = [preprocess(item, self.tokenizer) for item in prev_commands]
+        prev_command_tokens = [preproc(item, str_type='None', lower_case=True) for item in prev_commands]
         prev_command_ids = [words_to_ids(tokens, self.word2id) for tokens in prev_command_tokens]
 
-        quest_tokens = [preprocess(item, self.tokenizer) for item in infos["objective"]]
+        quest_tokens = [preproc(item, str_type='None', lower_case=True) for item in infos["objective"]]
         quest_id_list = [words_to_ids(tokens, self.word2id) for tokens in quest_tokens]
 
-        look_tokens = [preprocess(item, self.tokenizer) for item in infos["description"]]
+        look_tokens = [preproc(item, str_type='description', lower_case=True) for item in infos["description"]]
         for i, l in enumerate(look_tokens):
             if len(l) == 0:
                 look_tokens[i] = ["end"]
