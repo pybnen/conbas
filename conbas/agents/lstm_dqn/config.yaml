@@ -17,6 +17,7 @@ training:
   use_double_DQN: true
 
   replay_buffer:
+    type: 'my' # ('my', 'cc')
     batch_size: 32
     capacity: 500_000
     alpha: 0.6    

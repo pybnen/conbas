@@ -29,7 +29,7 @@ from textworld import EnvInfos
 from .model import LstmDqnModel
 from .policy import AnnealedEpsGreedyQPolicy
 from .utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn
-from .core import Transition, TransitionBatch, PrioritizedReplayMemory
+from .core import Transition, TransitionBatch, PrioritizedReplayMemory, CCPrioritizedReplayMemory
 
 
 class LstmDqnAgent:
@@ -276,12 +276,13 @@ class LstmDqnAgent:
         plt.close(fig)
 
         # plot beta anneal
-        fig, ax = plt.subplots(figsize=(15, 7))
-        plt.xlabel("expected update steps")
-        plt.ylabel("beta")
-        ax.plot([beta_anneal_fn(s) for s in range(0, expected_update_steps)])
-        fig.savefig(self.experiment_path / "annealed_beta.png")
-        plt.close(fig)
+        if beta_anneal_fn is not None:
+            fig, ax = plt.subplots(figsize=(15, 7))
+            plt.xlabel("expected update steps")
+            plt.ylabel("beta")
+            ax.plot([beta_anneal_fn(s) for s in range(0, expected_update_steps)])
+            fig.savefig(self.experiment_path / "annealed_beta.png")
+            plt.close(fig)
 
         log_dir = self.experiment_path / \
             "{}_{}".format(datetime.now().strftime("%b%d_%H-%M-%S"),
@@ -299,13 +300,21 @@ class LstmDqnAgent:
 
         # setup replay buffer -------------------------------------------------
         buffer_args = train_config["replay_buffer"]
-        anneald_args = train_config["replay_buffer"]["beta_annealed_args"]
-        anneal_fn = linear_inc_fn(**anneald_args)
-        replay_memory = PrioritizedReplayMemory(capacity=buffer_args["capacity"],
-                                                batch_size=buffer_args["batch_size"],
-                                                alpha=buffer_args["alpha"],
-                                                start_beta=anneald_args["lower_bound"],
-                                                anneal_fn=anneal_fn)
+        anneal_fn = None
+        if buffer_args["type"] == "my":
+            anneald_args = train_config["replay_buffer"]["beta_annealed_args"]
+            anneal_fn = linear_inc_fn(**anneald_args)
+            replay_memory = PrioritizedReplayMemory(capacity=buffer_args["capacity"],
+                                                    batch_size=buffer_args["batch_size"],
+                                                    alpha=buffer_args["alpha"],
+                                                    start_beta=anneald_args["lower_bound"],
+                                                    anneal_fn=anneal_fn)
+        elif buffer_args["type"] == "cc":
+            replay_memory = CCPrioritizedReplayMemory(capacity=buffer_args["capacity"],
+                                                      batch_size=buffer_args["batch_size"],
+                                                      priority_fraction=buffer_args["alpha"])
+        else:
+            raise ValueError
 
         # setup experiment directory ------------------------------------------
         try:
@@ -484,7 +493,7 @@ class LstmDqnAgent:
 
     def update(self,
                discount: float,
-               replay_memory: PrioritizedReplayMemory,
+               replay_memory,
                loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
                optimizer: optim.Optimizer,
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
@@ -504,7 +513,8 @@ class LstmDqnAgent:
         rewards = torch.tensor(batch.reward, dtype=torch.float32, device=self.device)
         next_input_tensor, next_input_lengths = self.pad_input_ids(batch.next_observation)
         non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32, device=self.device)
-        weights = torch.from_numpy(weights).to(device=self.device)
+        if weights is not False:
+            weights = torch.from_numpy(weights).to(device=self.device)
 
         # q_values from policy network, Q(obs, a, phi)
         q_values = self.q_values(input_tensor, input_lengths, self.lstm_dqn).gather(
@@ -528,7 +538,9 @@ class LstmDqnAgent:
         # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
         target = rewards + non_terminal_mask * discount * next_q_values.detach()
 
-        loss = loss_fn(q_values, target) * weights
+        loss = loss_fn(q_values, target)
+        if weights is not False:
+            loss *= weights
         priorities = loss.detach().cpu().numpy()
         loss = loss.mean()
 
@@ -539,7 +551,8 @@ class LstmDqnAgent:
         optimizer.step()
 
         # update priorities
-        replay_memory.update_priorities(indices, priorities)
+        if indices is not False:
+            replay_memory.update_priorities(indices, priorities)
 
         # in server torch version total_norm is float
         if type(total_norm) == torch.Tensor:

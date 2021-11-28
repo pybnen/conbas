@@ -2,6 +2,7 @@ from typing import List, NamedTuple, Tuple, Callable
 
 import numpy as np
 import torch
+import random
 
 
 class Transition(NamedTuple):
@@ -71,35 +72,15 @@ class PrioritizedReplayMemory(Memory):
         self.pos = 0
         self.eps = 1e-5
 
-        self.stats = {"reward_mean": 0.0, "reward_total": 0.0, "reward_cnt": {}}
-
     def append(self, transition: Transition) -> None:
         # calculate priorization
         self.priorities[self.pos] = np.max(self.priorities) if len(self) > 0 else 1.0
 
         # add transition to memory
-        old_reward = 0.0
         if len(self) < self.capacity:
-            reward_total = self.stats["reward_total"] + transition.reward
             self.memory.append(transition)
         else:
-            old_reward = self.memory[self.pos].reward
-            reward_total = self.stats["reward_total"] + transition.reward - old_reward
             self.memory[self.pos] = transition
-
-        # add new reward count
-        if transition.reward != 0.0:
-            if transition.reward not in self.stats["reward_cnt"]:
-                self.stats["reward_cnt"][transition.reward] = 1
-            else:
-                self.stats["reward_cnt"][transition.reward] += 1
-
-        # remove old reward count
-        if old_reward != 0.0:
-            self.stats["reward_cnt"][old_reward] -= 1
-
-        self.stats["reward_total"] = reward_total
-        self.stats["reward_mean"] = reward_total / len(self)
 
         self.pos = (self.pos + 1) % self.capacity
 
@@ -132,3 +113,48 @@ class PrioritizedReplayMemory(Memory):
 
     def __len__(self) -> int:
         return len(self.memory)
+
+
+class CCPrioritizedReplayMemory(Memory):
+
+    def __init__(self, capacity: int, batch_size: int, priority_fraction=0.0):
+        super().__init__(batch_size)
+
+        # prioritized replay memory
+        self.priority_fraction = priority_fraction
+        self.alpha_capacity = int(capacity * priority_fraction)
+        self.beta_capacity = capacity - self.alpha_capacity
+        self.alpha_memory, self.beta_memory = [], []
+        self.alpha_position, self.beta_position = 0, 0
+
+        self.beta = 0
+
+    def append(self, transition: Transition) -> None:
+        """Saves a transition."""
+        is_prior = transition.reward > 0.0
+
+        if is_prior:
+            if len(self.alpha_memory) < self.alpha_capacity:
+                self.alpha_memory.append(None)
+            self.alpha_memory[self.alpha_position] = transition
+            self.alpha_position = (self.alpha_position + 1) % self.alpha_capacity
+        else:
+            if len(self.beta_memory) < self.beta_capacity:
+                self.beta_memory.append(None)
+            self.beta_memory[self.beta_position] = transition
+            self.beta_position = (self.beta_position + 1) % self.beta_capacity
+
+    def sample(self, replace: bool = False) -> Tuple[List[Transition], bool, bool]:
+        batch_size = self.batch_size
+
+        from_alpha = min(int(self.priority_fraction * batch_size), len(self.alpha_memory))
+        from_beta = min(batch_size - int(self.priority_fraction * batch_size), len(self.beta_memory))
+        res = random.sample(self.alpha_memory, from_alpha) + random.sample(self.beta_memory, from_beta)
+        random.shuffle(res)
+        return res, False, False
+
+    def update_beta(self, step: int):
+        pass
+
+    def __len__(self):
+        return len(self.alpha_memory) + len(self.beta_memory)
