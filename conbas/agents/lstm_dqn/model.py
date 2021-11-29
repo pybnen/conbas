@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from .layers import Embedding, masked_mean, LSTMCell, FastUniLSTM
 
 
 class LstmDqnModel(nn.Module):
@@ -17,16 +18,28 @@ class LstmDqnModel(nn.Module):
         self.embedding_size = config["embedding_size"]
         self.representation_hidden_size = config['representation_rnn']
 
-        self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
-
         if config["type"] == "lstm":
+            self.embedding = nn.Embedding(len(word_vocab), self.embedding_size)
             self.representation_rnn = nn.LSTM(input_size=self.embedding_size,
                                               hidden_size=self.representation_hidden_size[0],
                                               num_layers=1)
-        elif config["type"] == 'gru':
+            self.representation_generator = self._representation_generator
+        elif config["type"] == "gru":
+            self.embedding = nn.Embedding(len(word_vocab), self.embedding_size)
             self.representation_rnn = nn.GRU(input_size=self.embedding_size,
                                              hidden_size=self.representation_hidden_size[0],
                                              num_layers=1)
+            self.representation_generator = self._representation_generator
+        elif config["type"] == "fast_lstm":
+            # define layers
+            self.embedding = Embedding(embedding_size=self.embedding_size,
+                                       vocab_size=len(word_vocab),
+                                       enable_cuda=device.type == "cuda")
+
+            self.representation_rnn = FastUniLSTM(ninp=self.embedding_size,
+                                                  nhids=self.representation_hidden_size,
+                                                  dropout_between_rnn_layers=0.)
+            self.representation_generator = self._representation_generator_fast
         else:
             raise ValueError
 
@@ -52,7 +65,7 @@ class LstmDqnModel(nn.Module):
                 nn.init.xavier_uniform_(layer.weight.data)  # type: ignore
                 layer.bias.data.fill_(0)  # type: ignore
 
-    def representation_generator(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor) -> torch.Tensor:
+    def _representation_generator(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor) -> torch.Tensor:
         """Generates a state representation based on input observation.
 
         Input is a padded list of state information (sequences), an RNN is used to create features of the sequences.
@@ -78,6 +91,28 @@ class LstmDqnModel(nn.Module):
         output_lengths_device = output_lengths.float().to(self.device)
         state_representation = output_padded.sum(dim=0) / output_lengths_device.unsqueeze(dim=1)
         return state_representation
+
+    def _representation_generator_fast(self, input_tensor: torch.Tensor, input_lengths: torch.Tensor) -> torch.Tensor:
+        """Generates a state representation based on input observation.
+
+        Input is a padded list of state information (sequences), an RNN is used to create features of the sequences.
+        The state representation is the mean of these features.
+
+        Args:
+            input_tensor: tensor of shape (max_len, batch_size) containing the padded state information
+                for each game in the batch.
+                max_len: maximum length of game information
+                batch_size: number of games in batch
+            input_lengths: tensor of shape (batch_size) containing the length of each input sequence
+
+        Returns:
+            state_representation: tensor of shape (batch_size, )
+        """
+        input_tensor = input_tensor.transpose(0, 1)  # fast lstm impl expects batch first
+        embed, mask = self.embedding.forward(input_tensor)
+        encoding_sequence, _, _ = self.representation_rnn.forward(embed, mask)
+        mean_encoding = masked_mean(encoding_sequence, mask)  # batch x h
+        return mean_encoding
 
     def command_scorer(self, state_representation: torch.Tensor) -> torch.Tensor:
         """Calculates a score for each available command, based on the given state representation.
