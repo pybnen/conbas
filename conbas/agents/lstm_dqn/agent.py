@@ -5,6 +5,7 @@ import time
 import shutil
 from datetime import datetime
 import socket
+from torch.types import Number
 # from torch.types import Number
 import yaml
 from tqdm import tqdm
@@ -38,7 +39,7 @@ class LstmDqnAgent:
 
     def __init__(self, config: Dict[str, Any], commands: List[str], word_vocab: List[str]) -> None:
         assert not config["training"]["use_double_DQN"] or config["training"]["use_target_network"]
-        
+
         self.commands = commands
         self.config = config
         use_cuda = torch.cuda.is_available() and config["general"]["use_cuda"]
@@ -58,7 +59,7 @@ class LstmDqnAgent:
             # copy parameter from model to target model
             self.update_target_model(tau=1.0)
             # self.lstm_dqn_target.load_state_dict(self.lstm_dqn.state_dict())
-            
+
             for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
                 assert torch.allclose(target_parameter.data, parameter.data)
         else:
@@ -76,6 +77,66 @@ class LstmDqnAgent:
         self.word2id: Dict[str, int] = {}
         for i, w in enumerate(self.word_vocab):
             self.word2id[w] = i
+
+        self._setup_counting_reward()
+
+    def _setup_counting_reward(self) -> None:
+        self.state_cnt = None
+        beta = self.config["general"]["counting_reward"]["beta"]
+
+        def episodic_discovery_bonus(state_str: List[str]) -> List[Number]:
+            batch_size = len(state_str)
+            count_rewards = []
+
+            for i in range(batch_size):
+                if state_str[i] not in self.state_cnt[i]:
+                    self.state_cnt[i][state_str[i]] = 1
+                else:
+                    self.state_cnt[i][state_str[i]] += 1
+
+                cnt = self.state_cnt[i][state_str[i]]
+                reward = beta * float(cnt == 1)
+                count_rewards.append(reward)
+
+            return count_rewards
+
+        def cumulative_counting_bonus(state_str: List[str]) -> List[Number]:
+            batch_size = len(state_str)
+            count_rewards = []
+
+            for i in range(batch_size):
+                if state_str[i] not in self.state_cnt:
+                    self.state_cnt[state_str[i]] = 1
+                else:
+                    self.state_cnt[state_str[i]] += 1
+
+                cnt = self.state_cnt[state_str[i]]
+                reward = beta * cnt**(-1/3)
+                count_rewards.append(reward)
+
+            return count_rewards
+
+        def _reset_episodic(batch_size):
+            self.state_cnt = [{} for _ in range(batch_size)]
+
+        def _reset_cumulative():
+            self.state_cnt = {}
+
+        if self.config["general"]["counting_reward"]["type"] == "episodic":
+            self.reset_state_cnt = _reset_episodic
+            self.reset_state_cnt(self.config["training"]["batch_size"])
+
+            self.get_counting_reward = episodic_discovery_bonus
+        elif self.config["general"]["counting_reward"]["type"] == "cumulative":
+            self.reset_state_cnt = _reset_cumulative
+            self.reset_state_cnt()
+
+            self.get_counting_reward = cumulative_counting_bonus
+        else:
+            self.get_counting_reward = lambda state: [0.0] * len(state)
+
+    # def reset_state_cnt(self, batch_size):
+    #     self.state_cnt = [{} for _ in range(batch_size)]
 
     @ staticmethod
     def request_infos() -> Optional[EnvInfos]:
@@ -120,6 +181,12 @@ class LstmDqnAgent:
         input_tensor = pad_sequence(input_tensor_list, padding_value=self.word2id["<PAD>"]).to(self.device)
         input_lengths = torch.tensor([len(seq) for seq in input_tensor_list])
         return input_tensor, input_lengths
+
+    def extract_state_str(self, infos: Dict[str, List[Any]]) -> List[str]:
+        inventory_strings = infos["inventory"]
+        description_strings = infos["description"]
+        observation_strings = [_d + _i for (_d, _i) in zip(description_strings, inventory_strings)]
+        return observation_strings
 
     def extract_input(self, obs: List[str],
                       infos: Dict[str, List[Any]],
@@ -343,7 +410,14 @@ class LstmDqnAgent:
                             self.lstm_dqn.parameters())
         optimizer = optim.Adam(parameters, lr=train_config["optimizer"]["lr"])
 
+        use_counting_reward = self.config["general"]["counting_reward"]["type"] is not False
+        counting_reward_episodic = use_counting_reward \
+            and self.config["general"]["counting_reward"]["type"] == 'episodic'
+        counting_lambda = self.config["general"]["counting_reward"]["lambda"]
+
+        # define logging data structures --------------------------------------
         maxlen = 100
+        counting_avg = deque(maxlen=maxlen)
         score_avg = deque(maxlen=maxlen)
         step_avg = deque(maxlen=maxlen)
         loss_avg = deque(maxlen=maxlen)
@@ -365,6 +439,7 @@ class LstmDqnAgent:
                     obs, infos = env.reset()
                     self.init(obs, infos)
 
+                    counting_rewards = np.zeros(len(obs))
                     scores = np.array([0] * len(obs))
                     max_scores = np.array(infos["max_score"])
                     steps = [0] * len(obs)
@@ -384,6 +459,13 @@ class LstmDqnAgent:
 
                     # extract input information
                     input_ids = self.extract_input(obs, infos, self.prev_commands)
+
+                    if use_counting_reward:
+                        if counting_reward_episodic:
+                            self.reset_state_cnt(len(obs))
+
+                        state_str = self.extract_state_str(infos)
+                        _ = self.get_counting_reward(state_str)
 
                     while not all(batch_finished):
                         # increment step only if env is not finished
@@ -407,6 +489,14 @@ class LstmDqnAgent:
 
                         step_limit_reached = [step >= step_limit for step in steps]
                         batch_finished = [done or reached for done, reached in zip(dones, step_limit_reached)]
+
+                        if use_counting_reward:
+                            new_state_str = self.extract_state_str(infos)
+                            counting_reward = np.array(self.get_counting_reward(new_state_str))
+                            counting_rewards += counting_reward
+
+                            # calcualte reward including counting reward
+                            rewards = rewards + counting_lambda * counting_reward
 
                         for i, (input_id, command_index, reward, next_input_id, done, finished) \
                                 in enumerate(
@@ -448,12 +538,16 @@ class LstmDqnAgent:
                         if training_steps >= max_training_steps:
                             break  # while not finished
 
+                    counting_avg.append(np.mean(counting_rewards))
                     score_avg.append(np.mean(scores))  # scores contains final scores
                     step_avg.append(np.mean(steps))
                     loss_avg.append(np.mean(losses))
                     grad_norm_avg.append(np.mean(grad_norms))
 
                     # display/save statistics
+                    self.writer.add_scalar('avg_counting_reward', np.mean(counting_avg), training_steps)
+                    self.writer.add_scalar('curr_counting_reward', counting_avg[-1] / max_scores[0], training_steps)
+
                     self.writer.add_scalar('avg_score', np.mean(score_avg) / max_scores[0], training_steps)
                     self.writer.add_scalar('curr_score', score_avg[-1] / max_scores[0], training_steps)
 
@@ -476,6 +570,7 @@ class LstmDqnAgent:
                     pbar.set_postfix({
                         "epoch": epoch,
                         "eps": self.policy.eps,
+                        "cnt reward": np.mean(np.mean(counting_avg)),
                         "score": np.mean(score_avg) / max_scores[0],
                         "steps": np.mean(step_avg),
                         "loss": np.mean(loss_avg)})

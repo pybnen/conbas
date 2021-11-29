@@ -8,6 +8,12 @@ general:
     lower_bound: 0.2
     duration: 75_000
 
+  # counting reward
+  counting_reward:
+    type: false # (false, episodic, cumulative)
+    lambda: 1.0 #TODO anneal
+    beta: 1.0
+
 training:
   traning_steps: 1_200_000
   batch_size: 10
@@ -38,7 +44,7 @@ training:
 
 model:
   type: 'gru' # (gru, lstm, fast_lstm)
-  embedding_size: 20
+  embedding_size: 20  
   representation_rnn: [100]
   command_scorer_net: [64, 64]
 
