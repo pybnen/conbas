@@ -37,6 +37,7 @@ training:
     clip_grad_norm: 5
 
 model:
+  type: 'gru'         # (gru, lstm, fastlstm)
   embedding_size: 20
   representation_rnn: [100]
   command_scorer_net: [64, 64]

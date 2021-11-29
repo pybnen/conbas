@@ -19,9 +19,16 @@ class LstmDqnModel(nn.Module):
 
         self.embedding = nn.Embedding(len(word_vocab), config["embedding_size"])
 
-        self.representation_rnn = nn.GRU(input_size=self.embedding_size,
-                                         hidden_size=self.representation_hidden_size[0],
-                                         num_layers=1)
+        if config["type"] == "lstm":
+            self.representation_rnn = nn.LSTM(input_size=self.embedding_size,
+                                              hidden_size=self.representation_hidden_size[0],
+                                              num_layers=1)
+        elif config["type"] == 'gru':
+            self.representation_rnn = nn.GRU(input_size=self.embedding_size,
+                                             hidden_size=self.representation_hidden_size[0],
+                                             num_layers=1)
+        else:
+            raise ValueError
 
         linear_layer_hiddens = [self.representation_hidden_size[-1]] + \
             config["command_scorer_net"] + [len(commands)]
@@ -64,8 +71,7 @@ class LstmDqnModel(nn.Module):
         embed = self.embedding(input_tensor)
         packed = pack_padded_sequence(embed, input_lengths, enforce_sorted=False)
 
-        hidden = torch.zeros(1, len(input_lengths), self.representation_hidden_size[-1]).to(self.device)
-        output_packed, hidden = self.representation_rnn(packed, hidden)
+        output_packed, hidden = self.representation_rnn(packed)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
         # https://discuss.pytorch.org/t/average-of-the-gru-lstm-outputs-for-variable-length-sequences/57544/4
