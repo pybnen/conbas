@@ -7,8 +7,6 @@ from datetime import datetime
 import socket
 # from torch.types import Number
 import yaml
-
-import spacy
 from tqdm import tqdm
 
 import numpy as np
@@ -74,8 +72,6 @@ class LstmDqnAgent:
         # self.policy = EpsGreedyQPolicy(self.config["general"]["eps"])
         # policy_config = {"device": self.device, **self.config["general"]["linear_annealed_args"]}
         # self.policy = LinearAnnealedEpsGreedyQPolicy(**policy_config)
-
-        self.tokenizer = spacy.load('en_core_web_sm')
 
         self.word2id: Dict[str, int] = {}
         for i, w in enumerate(self.word_vocab):
