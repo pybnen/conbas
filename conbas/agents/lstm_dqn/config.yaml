@@ -10,8 +10,11 @@ general:
 
   # counting reward
   counting_reward:
-    type: false # (false, episodic, cumulative)
-    lambda: 1.0 #TODO anneal
+    type: episodic # (false, episodic, cumulative)
+    lambda_annealed_args:
+      upper_bound: 1.0
+      lower_bound: 1.0
+      duration: 1
     beta: 1.0
 
 training:

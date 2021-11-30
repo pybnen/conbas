@@ -413,7 +413,9 @@ class LstmDqnAgent:
         use_counting_reward = self.config["general"]["counting_reward"]["type"] is not False
         counting_reward_episodic = use_counting_reward \
             and self.config["general"]["counting_reward"]["type"] == 'episodic'
-        counting_lambda = self.config["general"]["counting_reward"]["lambda"]
+        lambda_annealed_args = self.config["general"]["counting_reward"]["lambda_annealed_args"]
+        counting_lambda = lambda_annealed_args["upper_bound"]
+        counting_lambda_fn = linear_decay_fn(**lambda_annealed_args)
 
         # define logging data structures --------------------------------------
         maxlen = 100
@@ -521,10 +523,10 @@ class LstmDqnAgent:
                             losses.append(loss)
                             grad_norms.append(total_norm)
 
-                            update_step += 1
                             # update alpha/beta/epsilon
-                            self.update_hyperparameter(update_step, replay_memory)
+                            counting_lambda = self.update_hyperparameter(training_steps, replay_memory, counting_lambda_fn)
 
+                            update_step += 1
                             # update target model
                             if train_config["use_target_network"] and update_step % target_update_interval == 0:
                                 self.update_target_model(tau)
@@ -563,13 +565,17 @@ class LstmDqnAgent:
 
                     self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
                     self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=training_steps)
+                    self.writer.add_scalar("general/update_step", update_step, global_step=training_steps)
+                    self.writer.add_scalar("general/counting_lambda", counting_lambda, global_step=training_steps)
 
                     pbar.update(n=training_steps - old_traning_steps)
                     old_traning_steps = training_steps
 
                     pbar.set_postfix({
                         "epoch": epoch,
+                        "update step": update_step,
                         "eps": self.policy.eps,
+                        "counting lambda": counting_lambda,
                         "cnt reward": np.mean(np.mean(counting_avg)),
                         "score": np.mean(score_avg) / max_scores[0],
                         "steps": np.mean(step_avg),
@@ -660,6 +666,7 @@ class LstmDqnAgent:
         for target_parameter, parameter in zip(self.lstm_dqn_target.parameters(), self.lstm_dqn.parameters()):
             target_parameter.data.copy_(tau * parameter.data + (1.0 - tau) * target_parameter.data)
 
-    def update_hyperparameter(self, update_step, replay_memory):
-        self.policy.update(update_step)
-        replay_memory.update_beta(update_step)
+    def update_hyperparameter(self, training_step, replay_memory, counting_lambda_fn):
+        self.policy.update(training_step)
+        replay_memory.update_beta(training_step)
+        return counting_lambda_fn(training_step)
