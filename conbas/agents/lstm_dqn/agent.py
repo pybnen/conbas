@@ -524,7 +524,8 @@ class LstmDqnAgent:
                             grad_norms.append(total_norm)
 
                             # update alpha/beta/epsilon
-                            counting_lambda = self.update_hyperparameter(training_steps, replay_memory, counting_lambda_fn)
+                            counting_lambda = self.update_hyperparameter(training_steps, replay_memory,
+                                                                         counting_lambda_fn)
 
                             update_step += 1
                             # update target model
@@ -573,10 +574,10 @@ class LstmDqnAgent:
 
                     pbar.set_postfix({
                         "epoch": epoch,
-                        "update step": update_step,
+                        "us": update_step,
                         "eps": self.policy.eps,
-                        "counting lambda": counting_lambda,
-                        "cnt reward": np.mean(np.mean(counting_avg)),
+                        "cnt lambda": counting_lambda,
+                        "cnt rew": np.mean(np.mean(counting_avg)),
                         "score": np.mean(score_avg) / max_scores[0],
                         "steps": np.mean(step_avg),
                         "loss": np.mean(loss_avg)})

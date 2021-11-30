@@ -6,11 +6,11 @@ general:
   eps_annealed_args:
     upper_bound: 1.0
     lower_bound: 0.2
-    duration: 75_000
+    duration: 750_000
 
   # counting reward
   counting_reward:
-    type: episodic # (false, episodic, cumulative)
+    type: false # (false, episodic, cumulative)
     lambda_annealed_args:
       upper_bound: 1.0
       lower_bound: 1.0
@@ -33,7 +33,7 @@ training:
     beta_annealed_args:
       upper_bound: 1.0
       lower_bound: 0.4
-      duration: 50_000
+      duration: 500_000
   
   update_after: 0
   update_per_k_game_steps: 4
