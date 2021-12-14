@@ -23,7 +23,7 @@ def parse_arguments():
 def get_agent(args):
     from conbas.agents.lstm_dqn.train import get_commands, get_word_vocab
     from conbas.agents import LstmDqnAgent
-    from conbas.agents.lstm_dqn.policy import EpsGreedyQPolicy
+    from conbas.agents.helpers.policy import EpsGreedyQPolicy
 
     device = None
     if args.cpu:

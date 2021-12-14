@@ -26,8 +26,8 @@ import gym
 from textworld import EnvInfos
 
 from .model import LstmDqnModel
-from .policy import AnnealedEpsGreedyQPolicy
-from .utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn
+from ..helpers.policy import AnnealedEpsGreedyQPolicy
+from ..helpers.utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn
 from .core import Transition, TransitionBatch, PrioritizedReplayMemory, CCPrioritizedReplayMemory
 
 
@@ -204,7 +204,7 @@ class LstmDqnAgent:
         inventory_tokens = [preproc(item, str_type='inventory', lower_case=True) for item in infos["inventory"]]
         inventory_ids = [words_to_ids(tokens, self.word2id) for tokens in inventory_tokens]
 
-        observation_tokens = [preproc(item, str_type='feedback', lower_case=True)  for item in obs]
+        observation_tokens = [preproc(item, str_type='feedback', lower_case=True) for item in obs]
         observation_ids = [words_to_ids(tokens, self.word2id) for tokens in observation_tokens]
 
         prev_command_tokens = [preproc(item, str_type='None', lower_case=True) for item in prev_commands]
@@ -220,10 +220,10 @@ class LstmDqnAgent:
         look_ids = [words_to_ids(tokens, self.word2id) for tokens in look_tokens]
 
         input_ids = [_l + i + q + o + pc for _l, i, q, o, pc in zip(look_ids,
-                                                             inventory_ids,
-                                                             quest_id_list,
-                                                             observation_ids,
-                                                             prev_command_ids)]
+                                                                    inventory_ids,
+                                                                    quest_id_list,
+                                                                    observation_ids,
+                                                                    prev_command_ids)]
         # input_tensor, input_lengths = self.pad_input_ids(input_ids)
         return input_ids
 

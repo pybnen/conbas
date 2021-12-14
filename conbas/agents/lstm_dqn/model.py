@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from .layers import Embedding, masked_mean, LSTMCell, FastUniLSTM
+from ..helpers.layers import Embedding, masked_mean, FastUniLSTM
 
 
 class LstmDqnModel(nn.Module):

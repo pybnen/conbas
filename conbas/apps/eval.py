@@ -56,7 +56,7 @@ def get_random_agent(args):
 
 def get_lstm_dqn_agent(args):
     from conbas.agents.lstm_dqn.train import get_commands, get_word_vocab
-    from conbas.agents.lstm_dqn.policy import EpsGreedyQPolicy
+    from conbas.agents.helpers.policy import EpsGreedyQPolicy
 
     def act(agent, obs, infos):
         with torch.no_grad():
