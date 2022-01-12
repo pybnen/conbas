@@ -382,10 +382,10 @@ class LstmDrqnAgent:
                                                     start_beta=anneald_args["lower_bound"],
                                                     anneal_fn=anneal_fn)
         elif buffer_args["type"] == "cc":
-            raise ValueError
-            # replay_memory = CCPrioritizedReplayMemory(capacity=buffer_args["capacity"],
-            #                                           batch_size=buffer_args["batch_size"],
-            #                                           priority_fraction=buffer_args["alpha"])
+            replay_memory = CCPrioritizedReplayMemory(capacity=buffer_args["capacity"],
+                                                      batch_size=buffer_args["batch_size"],
+                                                      history_size=buffer_args["history_size"],
+                                                      priority_fraction=buffer_args["alpha"])
         else:
             raise ValueError
 
@@ -468,6 +468,7 @@ class LstmDrqnAgent:
                     step_limit_reached = [False] * len(obs)
                     batch_finished = [False] * len(obs)
                     not_or_recently_finished = [True] * len(obs)
+                    is_prior = [False] * len(obs)
 
                     # extract input information
                     input_ids = self.extract_input(obs, infos, self.prev_commands)
@@ -521,6 +522,12 @@ class LstmDrqnAgent:
                                 if finished:
                                     not_or_recently_finished[i] = False
 
+                                # TODO make config to define is_prior
+                                # 1.) one transaction as positiv reward
+                                # 2.) goal reached -> done is true
+                                if done:
+                                    is_prior[i] = True
+
                                 # done is True only if env is won/lost, not if step limit is reached
                                 memory_cache[i].append(Transition(input_id, command_index, reward, next_input_id, done, finished))
 
@@ -553,9 +560,9 @@ class LstmDrqnAgent:
                         if training_steps >= max_training_steps:
                             break  # while not finished
 
-                    for i, mc in enumerate(memory_cache):
+                    for i, (prior, mc) in enumerate(zip(is_prior, memory_cache)):
                         for transition in mc:
-                            replay_memory.append(transition)
+                            replay_memory.append(transition, prior)
 
                     counting_avg.append(np.mean(counting_rewards))
                     score_avg.append(np.mean(scores))  # scores contains final scores

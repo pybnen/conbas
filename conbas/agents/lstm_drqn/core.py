@@ -43,7 +43,7 @@ class ReplayMemory(Memory):
         self.memory: List[Transition] = []
         self.pos = 0
 
-    def append(self, transition: Transition) -> None:
+    def append(self, transition: Transition, _) -> None:
         if len(self) < self.capacity:
             self.memory.append(transition)
         else:
@@ -52,9 +52,7 @@ class ReplayMemory(Memory):
 
     def sample(self, replace: bool = False) -> List[List[Transition]]:
         # TODO maybe rework the sampling process
-
         # TODO add assertion as in PER
-        
         # taken from https://github.com/xingdi-eric-yuan/TextWorld-Coin-Collector/blob/master/lstm_drqn_baseline/agent.py#L22
         batch = []
         tried_times = 0
@@ -94,7 +92,7 @@ class PrioritizedReplayMemory(Memory):
         self.pos = 0
         self.eps = 1e-5
 
-    def append(self, transition: Transition) -> None:
+    def append(self, transition: Transition, _) -> None:
         # calculate priorization
         self.priorities[self.pos] = np.max(self.priorities) if len(self) > 0 else 1.0
 
@@ -115,7 +113,6 @@ class PrioritizedReplayMemory(Memory):
 
     def sample(self, replace: bool = False) -> Tuple[List[List[Transition]], List[float], List[int]]:
         # TODO maybe rework the sampling process
-
         # taken from https://github.com/xingdi-eric-yuan/TextWorld-Coin-Collector/blob/master/lstm_drqn_baseline/agent.py#L22
         probs = self._get_distribution()
 
@@ -181,15 +178,14 @@ class CCPrioritizedReplayMemory(Memory):
         self.priority_fraction = priority_fraction
         self.alpha_capacity = int(capacity * priority_fraction)
         self.beta_capacity = capacity - self.alpha_capacity
-        self.alpha_memory, self.beta_memory = [], []
+        self.alpha_memory: List[Transition] = []
+        self.beta_memory: List[Transition] = []
         self.alpha_position, self.beta_position = 0, 0
 
         self.beta = 0
 
-    def append(self, transition: Transition) -> None:
+    def append(self, transition: Transition, is_prior: bool = False) -> None:
         """Saves a transition."""
-        is_prior = transition.reward > 0.0
-
         if is_prior:
             if len(self.alpha_memory) < self.alpha_capacity:
                 self.alpha_memory.append(None)
@@ -201,14 +197,53 @@ class CCPrioritizedReplayMemory(Memory):
             self.beta_memory[self.beta_position] = transition
             self.beta_position = (self.beta_position + 1) % self.beta_capacity
 
-    def sample(self, replace: bool = False) -> Tuple[List[Transition], bool, bool]:
+    def _sample(self, batch_size, mem: List[Transition]) -> List[List[Transition]]:
+        if len(mem) <= self.history_size:
+            return []
+
+        batch = []
+
+        tried_times = 0
+        while len(batch) < batch_size:
+            tried_times += 1
+            if tried_times >= 500:
+                break
+            idx = np.random.randint(self.history_size - 1, len(mem) - 1)
+
+            # only last frame can be (is_final == True)
+            if np.any([item.is_final for item in mem[idx - (self.history_size - 1): idx]]):
+                continue
+
+            sequence = mem[idx - (self.history_size - 1): idx + 1]
+            for i in range(len(sequence) - 1):
+                assert(sequence[i].next_observation == sequence[i+1].observation)
+
+            batch.append(sequence)
+
+        return batch
+
+    def sample(self, replace: bool = False) -> Tuple[List[List[Transition]], bool, bool]:
         batch_size = self.batch_size
 
         from_alpha = min(int(self.priority_fraction * batch_size), len(self.alpha_memory))
         from_beta = min(batch_size - int(self.priority_fraction * batch_size), len(self.beta_memory))
-        res = random.sample(self.alpha_memory, from_alpha) + random.sample(self.beta_memory, from_beta)
-        random.shuffle(res)
-        return res, False, False
+
+        batch = []
+        batch_alpha = self._sample(from_alpha, self.alpha_memory)
+        batch_beta = self._sample(from_beta, self.beta_memory)
+
+        if not batch_alpha and not batch_beta:  # check empty list
+            return [], False, False
+
+        if batch_alpha:
+            batch += batch_alpha
+
+        if batch_beta:
+            batch += batch_beta
+
+        random.shuffle(batch)
+        batch = list(map(list, zip(*batch)))  # list (history size) of list (batch) of tuples
+        return batch, False, False
 
     def update_beta(self, step: int):
         pass
