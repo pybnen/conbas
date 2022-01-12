@@ -567,8 +567,10 @@ class LstmDrqnAgent:
                     counting_avg.append(np.mean(counting_rewards))
                     score_avg.append(np.mean(scores))  # scores contains final scores
                     step_avg.append(np.mean(steps))
-                    loss_avg.append(np.mean(losses))
-                    grad_norm_avg.append(np.mean(grad_norms))
+                    if losses:
+                        loss_avg.append(np.mean(losses))
+                    if grad_norms:
+                        grad_norm_avg.append(np.mean(grad_norms))
 
                     # display/save statistics
                     self.writer.add_scalar('avg_counting_reward', np.mean(counting_avg), training_steps)
@@ -580,12 +582,14 @@ class LstmDrqnAgent:
                     self.writer.add_scalar('avg_step', np.mean(step_avg), training_steps)
                     self.writer.add_scalar('curr_step', step_avg[-1], training_steps)
 
-                    self.writer.add_scalar('avg_loss', np.mean(loss_avg), training_steps)
-                    self.writer.add_scalar('curr_loss', loss_avg[-1], training_steps)
+                    if loss_avg:
+                        self.writer.add_scalar('avg_loss', np.mean(loss_avg), training_steps)
+                        self.writer.add_scalar('curr_loss', loss_avg[-1], training_steps)
 
-                    self.writer.add_scalar("curr_gradient_total_norm", np.mean(grad_norm_avg),
-                                           global_step=training_steps)
-                    self.writer.add_scalar("curr_gradient_total_norm", grad_norm_avg[-1], global_step=training_steps)
+                    if grad_norm_avg:
+                        self.writer.add_scalar("curr_gradient_total_norm", np.mean(grad_norm_avg),
+                                            global_step=training_steps)
+                        self.writer.add_scalar("curr_gradient_total_norm", grad_norm_avg[-1], global_step=training_steps)
 
                     self.writer.add_scalar("general/beta", replay_memory.beta, global_step=training_steps)
                     self.writer.add_scalar("general/epsilon", self.policy.eps, global_step=training_steps)
@@ -603,7 +607,7 @@ class LstmDrqnAgent:
                         "cnt rew": np.mean(np.mean(counting_avg)),
                         "score": np.mean(score_avg) / max_scores[0],
                         "steps": np.mean(step_avg),
-                        "loss": np.mean(loss_avg)})
+                        "loss": np.mean(loss_avg) if loss_avg else 0.0})
 
                     epoch += 1
 
