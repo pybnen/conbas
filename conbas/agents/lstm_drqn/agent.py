@@ -372,6 +372,8 @@ class LstmDrqnAgent:
         # setup replay buffer -------------------------------------------------
         buffer_args = train_config["replay_buffer"]
         anneal_fn = None
+
+        solved_is_prior = train_config["replay_buffer"]["solved_is_prior"]
         if buffer_args["type"] == "my":
             anneald_args = train_config["replay_buffer"]["beta_annealed_args"]
             anneal_fn = linear_inc_fn(**anneald_args)
@@ -525,7 +527,7 @@ class LstmDrqnAgent:
                                 # TODO make config to define is_prior
                                 # 1.) one transaction as positiv reward
                                 # 2.) goal reached -> done is true
-                                if done:
+                                if (solved_is_prior and done) or (not solved_is_prior and reward > 0.0):
                                     is_prior[i] = True
 
                                 # done is True only if env is won/lost, not if step limit is reached

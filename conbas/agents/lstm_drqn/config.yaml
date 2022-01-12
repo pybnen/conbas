@@ -27,6 +27,7 @@ training:
 
   replay_buffer:
     type: 'my' # ('my', 'cc')
+    solved_is_prior: False # cc default: False
     batch_size: 32
     capacity: 500_000
     alpha: 0.6    
