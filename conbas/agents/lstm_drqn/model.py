@@ -19,6 +19,7 @@ class LstmDrqnModel(nn.Module):
         self.representation_hidden_size = config['representation_rnn']
         self.command_scorer_rnn_hidden = config['command_scorer_rnn_hidden']
 
+        # define representation rnn
         if config["type"] == "lstm":
             self.embedding = nn.Embedding(len(word_vocab), self.embedding_size)
             self.representation_rnn = nn.LSTM(input_size=self.embedding_size,
@@ -44,7 +45,7 @@ class LstmDrqnModel(nn.Module):
         else:
             raise ValueError
 
-        # TODO CoinCollector uses own LSTMCell implementation
+        # define command scorer rnn
         self.command_scorer_rnn = nn.LSTMCell(input_size=self.representation_hidden_size[-1],
                                               hidden_size=self.command_scorer_rnn_hidden,
                                               bias=True)
