@@ -598,6 +598,22 @@ class LstmDrqnAgent:
                     self.writer.add_scalar("general/update_step", update_step, global_step=training_steps)
                     self.writer.add_scalar("general/counting_lambda", counting_lambda, global_step=training_steps)
 
+                    # replay buffer
+                    self.writer.add_scalar("replay_buffer/mean_reward",
+                                           replay_memory.stats["reward_mean"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/timeout",
+                                           replay_memory.stats["timeout"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/tries_mean",
+                                           replay_memory.stats["tries_mean"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/sampled_reward",
+                                           replay_memory.stats["sampled_reward"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/sampled_done_cnt",
+                                           replay_memory.stats["sampled_done_cnt"], global_step=training_steps)
+                    for r, c in replay_memory.stats["sampled_reward_cnt"].items():
+                        self.writer.add_scalar("replay_buffer/sampled_cnt_{:.2f}".format(r),
+                                               c, global_step=training_steps)
+                    replay_memory.reset_stats()
+
                     pbar.update(n=training_steps - old_traning_steps)
                     old_traning_steps = training_steps
 
