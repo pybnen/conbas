@@ -36,7 +36,7 @@ training:
       lower_bound: 0.4
       duration: 500_000
     history_size: 8
-    update_from: 4
+    bootstrap_state: 4
 
   update_after: 0
   update_per_k_game_steps: 4

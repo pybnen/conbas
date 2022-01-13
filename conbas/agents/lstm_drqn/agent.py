@@ -626,6 +626,8 @@ class LstmDrqnAgent:
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
         assert self.lstm_dqn.training
 
+        bootstrap_state = self.config["replay_buffer"]["bootstrap_state"]
+
         batch, weights, indices = replay_memory.sample()
         # This is a neat trick to convert a batch transitions into one
         # transition that contains in each attribute a batch of that attribute,
@@ -641,8 +643,12 @@ class LstmDrqnAgent:
             input_tensor, input_lengths = self.pad_input_ids(batch.observation)
 
             q_values, (h, c) = self.q_values(input_tensor, input_lengths, self.lstm_dqn, h, c)
-            target_q_values, (h_target, c_target) = self.q_values(input_tensor, input_lengths,
-                                                                  self.lstm_dqn_target, h_target, c_target)
+            with torch.no_grad():
+                target_q_values, (h_target, c_target) = self.q_values(input_tensor, input_lengths,
+                                                                      self.lstm_dqn_target, h_target, c_target)
+
+            if i < bootstrap_state:
+                q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
         # last batch in sequence
         command_indices = torch.stack(sequence[-1].command_index, dim=0).to(self.device)
