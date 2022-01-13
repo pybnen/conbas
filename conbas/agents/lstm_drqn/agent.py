@@ -626,7 +626,7 @@ class LstmDrqnAgent:
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
         assert self.lstm_dqn.training
 
-        bootstrap_state = self.config["replay_buffer"]["bootstrap_state"]
+        bootstrap_state = self.config["training"]["replay_buffer"]["bootstrap_state"]
 
         batch, weights, indices = replay_memory.sample()
         # This is a neat trick to convert a batch transitions into one
