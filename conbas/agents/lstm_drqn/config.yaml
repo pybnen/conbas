@@ -60,4 +60,4 @@ checkpoint:
   experiments_path: "experiments/lvl1/"
   experiment_tag: "s120"
   experiment_description: "lvl 1, 120 steps"
-  save_frequency: 10_000
+  save_frequency: 100_000

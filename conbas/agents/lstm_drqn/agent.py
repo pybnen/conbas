@@ -601,10 +601,14 @@ class LstmDrqnAgent:
                     # replay buffer
                     self.writer.add_scalar("replay_buffer/mean_reward",
                                            replay_memory.stats["reward_mean"], global_step=training_steps)
+                    
                     self.writer.add_scalar("replay_buffer/timeout",
                                            replay_memory.stats["timeout"], global_step=training_steps)
                     self.writer.add_scalar("replay_buffer/tries_mean",
                                            replay_memory.stats["tries_mean"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/n_sampled",
+                                           replay_memory.stats["n_sampled"], global_step=training_steps)
+                    
                     self.writer.add_scalar("replay_buffer/sampled_reward",
                                            replay_memory.stats["sampled_reward"], global_step=training_steps)
                     self.writer.add_scalar("replay_buffer/sampled_done_cnt",

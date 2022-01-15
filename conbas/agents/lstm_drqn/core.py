@@ -100,6 +100,9 @@ class PrioritizedReplayMemory(Memory):
         self.stats["sampled_reward"] = 0.0
         self.stats["sampled_done_cnt"] = 0
         self.stats["sampled_reward_cnt"] = {}
+        self.stats["timeout"] = 0
+        self.stats["tries_mean"] = 0
+        self.stats["n_sampled"] = 0
 
     def append(self, transition: Transition, _) -> None:
         # calculate priorization
