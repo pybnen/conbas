@@ -101,6 +101,7 @@ class PrioritizedReplayMemory(Memory):
         self.stats["sampled_done_cnt"] = 0
         self.stats["sampled_reward_cnt"] = {}
         self.stats["timeout"] = 0
+        self.stats["tries_total"] = 0
         self.stats["tries_mean"] = 0
         self.stats["n_sampled"] = 0
 
@@ -225,6 +226,10 @@ class CCPrioritizedReplayMemory(Memory):
         self.stats["sampled_reward"] = 0.0
         self.stats["sampled_done_cnt"] = 0
         self.stats["sampled_reward_cnt"] = {}
+        self.stats["timeout"] = 0
+        self.stats["tries_total"] = 0
+        self.stats["tries_mean"] = 0
+        self.stats["n_sampled"] = 0
 
     def append(self, transition: Transition, is_prior: bool = False) -> None:
         """Saves a transition."""
