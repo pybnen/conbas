@@ -601,14 +601,14 @@ class LstmDrqnAgent:
                     # replay buffer
                     self.writer.add_scalar("replay_buffer/mean_reward",
                                            replay_memory.stats["reward_mean"], global_step=training_steps)
-                    
+
                     self.writer.add_scalar("replay_buffer/timeout",
                                            replay_memory.stats["timeout"], global_step=training_steps)
                     self.writer.add_scalar("replay_buffer/tries_mean",
                                            replay_memory.stats["tries_mean"], global_step=training_steps)
                     self.writer.add_scalar("replay_buffer/n_sampled",
                                            replay_memory.stats["n_sampled"], global_step=training_steps)
-                    
+
                     self.writer.add_scalar("replay_buffer/sampled_reward",
                                            replay_memory.stats["sampled_reward"], global_step=training_steps)
                     self.writer.add_scalar("replay_buffer/sampled_done_cnt",
@@ -704,7 +704,14 @@ class LstmDrqnAgent:
         loss = loss_fn(q_values, target)
         if weights is not False:
             loss *= weights
-        priorities = loss.detach().cpu().numpy()
+
+        if self.config["training"]["replay_buffer"]["priority"] == "loss":
+            priorities = loss.detach().cpu().numpy()
+        elif self.config["training"]["replay_buffer"]["priority"] == "td_error":
+            priorities = (target - q_values).detach().cpu().numpy()
+        else:
+            raise ValueError()
+
         loss = loss.mean()
 
         # update step
