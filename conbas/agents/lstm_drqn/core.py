@@ -203,6 +203,105 @@ class PrioritizedReplayMemory(Memory):
         return len(self.memory)
 
 
+class PrioritizedSequenceReplayMemory(Memory):
+    def __init__(self, capacity: int, batch_size: int, history_size: int,
+                 anneal_fn: Callable[[int], float], alpha: float = 0.6, start_beta: float = 0.4) -> None:
+        super().__init__(batch_size, history_size)
+        self.capacity = capacity
+
+        self.alpha = alpha
+        self.beta = start_beta
+        self.anneal_fn = anneal_fn
+
+        self.memory: List[List[Transition]] = []
+        self.priorities = np.zeros(capacity, dtype=np.float32)
+
+        self.pos = 0
+        self.eps = 1e-5
+
+        self.stats = {"reward_mean": 0.0, "reward_total": 0.0,
+                      "timeout": 0, "tries_mean": 0, "tries_total": 0, "n_sampled": 0,
+                      "sampled_reward": 0.0, "sampled_done_cnt": 0, "sampled_reward_cnt": {}}
+
+    def reset_stats(self):
+        self.stats["sampled_reward"] = 0.0
+        self.stats["sampled_done_cnt"] = 0
+        self.stats["sampled_reward_cnt"] = {}
+        self.stats["timeout"] = 0
+        self.stats["tries_total"] = 0
+        self.stats["tries_mean"] = 0
+        self.stats["n_sampled"] = 0
+
+    def append_episode(self, episode: List[Transition]):
+        subsequences = [episode[i:i+self.history_size] for i in range(len(episode) - self.history_size + 1)]
+        for subsequence in subsequences:
+            self.append_sequence(subsequence)
+
+    def append_sequence(self, sequence: List[Transition]):
+        # calculate priorization
+        self.priorities[self.pos] = np.max(self.priorities) if len(self) > 0 else 1.0
+
+        reward_total = self.stats["reward_total"] + sequence[-1].reward
+
+        # add transition to memory
+        if len(self) < self.capacity:
+            self.memory.append(sequence)
+        else:
+            reward_total -= self.memory[self.pos][-1].reward
+            self.memory[self.pos] = sequence
+
+        # update statistic
+        self.stats["reward_total"] = reward_total
+        self.stats["reward_mean"] = reward_total / len(self)
+
+        self.pos = (self.pos + 1) % self.capacity  
+
+    def append(self, transition: Transition, _) -> None:
+        pass
+
+    def _get_distribution(self) -> np.ndarray:
+        priorities = self.priorities[:len(self)]
+
+        probs = priorities**self.alpha
+        probs /= probs.sum()
+        return probs
+
+    def sample(self, replace: bool = False) -> Tuple[List[List[Transition]], List[float], List[int]]:
+        probs = self._get_distribution()
+
+        indices = np.random.choice(np.arange(len(self)), size=self.batch_size, replace=replace, p=probs)
+
+        weights = (len(self) * probs[indices])**(-self.beta)
+        weights /= np.max(weights)
+        weights = np.array(weights, dtype=np.float32)
+
+        batch = [self.memory[i] for i in indices]
+
+        self.stats["sampled_reward"] += np.sum([seq[-1].reward for seq in batch])
+        self.stats["sampled_done_cnt"] += np.sum([seq[-1].done for seq in batch])
+        for seq in batch:
+            if seq[-1].reward != 0.0:
+                if seq[-1].reward not in self.stats["sampled_reward_cnt"]:
+                    self.stats["sampled_reward_cnt"][seq[-1].reward] = 1
+                else:
+                    self.stats["sampled_reward_cnt"][seq[-1].reward] += 1
+
+        batch = list(map(list, zip(*batch)))  # list (history size) of list (batch) of tuples
+        return batch, weights, indices
+
+    def update_priorities(self, indices, losses):
+        losses = np.abs(losses) + self.eps
+        self.priorities[indices] = losses
+        # for idx, prio in zip(indices, losses):
+        #    self.priorities[idx] = prio
+
+    def update_beta(self, step: int):
+        self.beta = self.anneal_fn(step)
+
+    def __len__(self) -> int:
+        return len(self.memory)
+
+
 class CCPrioritizedReplayMemory(Memory):
 
     def __init__(self, capacity: int, batch_size: int, history_size: int, priority_fraction=0.0):

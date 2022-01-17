@@ -26,7 +26,7 @@ training:
   use_double_DQN: true
 
   replay_buffer:
-    type: 'my' # ('my', 'cc')
+    type: 'seq' # ('my', 'cc', 'seq')
     priority: 'loss' # ('loss', 'td_error')
     solved_is_prior: False # cc default: False
     batch_size: 32

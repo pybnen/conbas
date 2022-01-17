@@ -28,7 +28,7 @@ from textworld import EnvInfos
 from .model import LstmDrqnModel
 from ..helpers.policy import AnnealedEpsGreedyQPolicy
 from ..helpers.utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn
-from .core import Transition, TransitionBatch, PrioritizedReplayMemory, CCPrioritizedReplayMemory
+from .core import Transition, TransitionBatch, PrioritizedReplayMemory, CCPrioritizedReplayMemory, PrioritizedSequenceReplayMemory
 
 
 class LstmDrqnAgent:
@@ -383,6 +383,15 @@ class LstmDrqnAgent:
                                                     alpha=buffer_args["alpha"],
                                                     start_beta=anneald_args["lower_bound"],
                                                     anneal_fn=anneal_fn)
+        elif buffer_args["type"] == "seq":
+            anneald_args = train_config["replay_buffer"]["beta_annealed_args"]
+            anneal_fn = linear_inc_fn(**anneald_args)
+            replay_memory = PrioritizedSequenceReplayMemory(capacity=buffer_args["capacity"],
+                                                            batch_size=buffer_args["batch_size"],
+                                                            history_size=buffer_args["history_size"],
+                                                            alpha=buffer_args["alpha"],
+                                                            start_beta=anneald_args["lower_bound"],
+                                                            anneal_fn=anneal_fn)
         elif buffer_args["type"] == "cc":
             replay_memory = CCPrioritizedReplayMemory(capacity=buffer_args["capacity"],
                                                       batch_size=buffer_args["batch_size"],
@@ -563,8 +572,11 @@ class LstmDrqnAgent:
                             break  # while not finished
 
                     for i, (prior, mc) in enumerate(zip(is_prior, memory_cache)):
-                        for transition in mc:
-                            replay_memory.append(transition, prior)
+                        if isinstance(replay_memory, PrioritizedSequenceReplayMemory):
+                            replay_memory.append_episode(mc)
+                        else:
+                            for transition in mc:
+                                replay_memory.append(transition, prior)
 
                     counting_avg.append(np.mean(counting_rewards))
                     score_avg.append(np.mean(scores))  # scores contains final scores
