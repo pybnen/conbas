@@ -658,71 +658,93 @@ class LstmDrqnAgent:
                clip_grad_norm: float):  # -> Tuple[Number, Number]:
         assert self.lstm_dqn.training
 
-        bootstrap_state = self.config["training"]["replay_buffer"]["bootstrap_state"]
+        def calculate_target(next_q_values, next_q_values_target, batch):
+            rewards = torch.tensor(batch.reward, dtype=torch.float32, device=self.device)
+            non_terminal_mask = 1.0 - torch.tensor(batch.done, dtype=torch.float32, device=self.device)
 
-        batch, weights, indices = replay_memory.sample()
+            # no need to build a computation graph here
+            with torch.no_grad():
+                if self.config["training"]["use_double_DQN"]:
+                    # argmax_a Q(next_obs, a, phi)
+                    _, argmax_a = next_q_values.max(dim=1)
+                    # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
+                    next_q_value = next_q_values_target.gather(dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
+                    assert not next_q_value.requires_grad
+
+                else:
+                    # in this case lstm_dqn === lstm_dqn_target
+                    next_q_value, _ = next_q_values_target.max(dim=1)
+            target = rewards + non_terminal_mask * discount * next_q_value.detach()
+            return target
+
+        bootstrap_state = self.config["training"]["replay_buffer"]["bootstrap_state"]
+        update_from = self.config["training"]["replay_buffer"]["update_from"]
+
+        sequences, weights, indices = replay_memory.sample()
         # This is a neat trick to convert a batch transitions into one
         # transition that contains in each attribute a batch of that attribute,
         # found here: https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
         # and explained in more detail here: https://stackoverflow.com/questions/19339/transpose-unzip-function-inverse-of-zip/19343#19343
-        sequence = [TransitionBatch(*zip(*transitions)) for transitions in batch]  # type: ignore
+        sequence_batch = [TransitionBatch(*zip(*transitions)) for transitions in sequences]  # type: ignore
+
+        losses = []
+        priorities = []
 
         h, c = None, None
-        h_target, c_target = None, None
+        h_target, c_target = None, None        
 
-        for i, batch in enumerate(sequence):
-            # create tensors for update
-            input_tensor, input_lengths = self.pad_input_ids(batch.observation)
+        input_tensor, input_lengths = self.pad_input_ids(sequence_batch[0].observation)
+        q_values, (h, c) = self.q_values(input_tensor, input_lengths, self.lstm_dqn, h, c)
+        with torch.no_grad():
+            next_q_values_target, (h_target, c_target) = self.q_values(input_tensor, input_lengths,
+                                                                       self.lstm_dqn_target,
+                                                                       h_target, c_target)
+        # TODO check off by one error
+        # if bootstrap_state != 0:
+        #    q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
-            q_values, (h, c) = self.q_values(input_tensor, input_lengths, self.lstm_dqn, h, c)
+        for i, batch in enumerate(sequence_batch):
+            # calculate q values for next state
+            next_input_tensor, next_input_lengths = self.pad_input_ids(batch.next_observation)
+            next_q_values, (h, c) = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn, h, c)
             with torch.no_grad():
-                target_q_values, (h_target, c_target) = self.q_values(input_tensor, input_lengths,
-                                                                      self.lstm_dqn_target, h_target, c_target)
+                next_q_values_target, (h_target, c_target) = self.q_values(next_input_tensor,
+                                                                           next_input_lengths,
+                                                                           self.lstm_dqn_target,
+                                                                           h_target, c_target)
 
+            # TODO check off by one error
             if i < bootstrap_state:
                 q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
-        # last batch in sequence
-        command_indices = torch.stack(sequence[-1].command_index, dim=0).to(self.device)
-        rewards = torch.tensor(sequence[-1].reward, dtype=torch.float32, device=self.device)
-        next_input_tensor, next_input_lengths = self.pad_input_ids(sequence[-1].next_observation)
-        non_terminal_mask = 1.0 - torch.tensor(sequence[-1].done, dtype=torch.float32, device=self.device)
+            if i >= update_from:
+                command_indices = torch.stack(batch.command_index, dim=0).to(self.device)
+                q_value = q_values.gather(dim=1, index=command_indices.unsqueeze(-1)).squeeze(-1)
+                # calculate target
+                target = calculate_target(next_q_values, next_q_values_target, batch)
+
+                loss = loss_fn(q_value, target)
+                losses.append(loss)
+
+                if self.config["training"]["replay_buffer"]["priority"] == "loss":
+                    priorities.append(loss.detach().cpu().numpy())
+                elif self.config["training"]["replay_buffer"]["priority"] == "td_error":
+                    priorities.append((target - q_value).detach().cpu().numpy())
+                else:
+                    raise ValueError()
+
+            # next q values are current y values
+            q_values = next_q_values
+
+        loss = torch.stack(losses).mean(dim=0)
+        priorities = np.stack(priorities).mean(axis=0)
 
         if weights is not False:
-            weights = torch.from_numpy(weights).to(device=self.device)
+            t_weights = torch.from_numpy(weights).to(device=self.device)
+            loss *= t_weights
 
-        # q_values from policy network, Q(obs, a, phi)
-        q_values = q_values.gather(dim=1, index=command_indices.unsqueeze(-1)).squeeze(-1)
-        assert q_values.requires_grad
-
-        # no need to build a computation graph here
-        with torch.no_grad():
-            if self.config["training"]["use_double_DQN"]:
-                # argmax_a Q(next_obs, a, phi)
-                _, argmax_a = self.q_values(next_input_tensor, next_input_lengths, self.lstm_dqn, h, c)[0].max(dim=1)
-                # Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus)
-                next_q_values = self.q_values(next_input_tensor, next_input_lengths,
-                                              self.lstm_dqn_target, h_target, c_target)[0].gather(
-                                                  dim=1, index=argmax_a.unsqueeze(-1)).squeeze(-1)
-                assert not next_q_values.requires_grad
-            else:
-                # in this case lstm_dqn === lstm_dqn
-                next_q_values, _ = self.q_values(next_input_tensor, next_input_lengths,
-                                                 self.lstm_dqn_target, h_target, c_target)[0].max(dim=1)
-
-        # target = reward + discount * Q(next_obs, argmax_a Q(next_obs, a, phi), phi_minus) * non_terminal_mask
-        target = rewards + non_terminal_mask * discount * next_q_values.detach()
-
-        loss = loss_fn(q_values, target)
-        if weights is not False:
-            loss *= weights
-
-        if self.config["training"]["replay_buffer"]["priority"] == "loss":
-            priorities = loss.detach().cpu().numpy()
-        elif self.config["training"]["replay_buffer"]["priority"] == "td_error":
-            priorities = (target - q_values).detach().cpu().numpy()
-        else:
-            raise ValueError()
+            if self.config["training"]["replay_buffer"]["priority"] == "loss":
+                priorities *= weights
 
         loss = loss.mean()
 
