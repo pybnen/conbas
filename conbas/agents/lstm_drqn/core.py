@@ -12,6 +12,7 @@ class Transition(NamedTuple):
     next_observation: List[int]
     done: bool
     is_final: bool
+    reward_wo_cnt: float
 
 
 class TransitionBatch(NamedTuple):
@@ -21,6 +22,7 @@ class TransitionBatch(NamedTuple):
     next_observation: List[List[int]]
     done: List[bool]
     is_final: List[bool]
+    reward_wo_cnt: List[float]
 
 
 class Memory:
@@ -221,12 +223,11 @@ class PrioritizedSequenceReplayMemory(Memory):
 
         self.stats = {"reward_mean": 0.0, "reward_total": 0.0,
                       "timeout": 0, "tries_mean": 0, "tries_total": 0, "n_sampled": 0,
-                      "sampled_reward": 0.0, "sampled_done_cnt": 0, "sampled_reward_cnt": {}}
+                      "sampled_reward": 0.0, "sampled_done_cnt": 0}
 
     def reset_stats(self):
         self.stats["sampled_reward"] = 0.0
         self.stats["sampled_done_cnt"] = 0
-        self.stats["sampled_reward_cnt"] = {}
         self.stats["timeout"] = 0
         self.stats["tries_total"] = 0
         self.stats["tries_mean"] = 0
@@ -241,20 +242,20 @@ class PrioritizedSequenceReplayMemory(Memory):
         # calculate priorization
         self.priorities[self.pos] = np.max(self.priorities) if len(self) > 0 else 1.0
 
-        reward_total = self.stats["reward_total"] + sequence[-1].reward
+        reward_total = self.stats["reward_total"] + sequence[-1].reward_wo_cnt
 
         # add transition to memory
         if len(self) < self.capacity:
             self.memory.append(sequence)
         else:
-            reward_total -= self.memory[self.pos][-1].reward
+            reward_total -= self.memory[self.pos][-1].reward_wo_cnt
             self.memory[self.pos] = sequence
 
         # update statistic
         self.stats["reward_total"] = reward_total
         self.stats["reward_mean"] = reward_total / len(self)
 
-        self.pos = (self.pos + 1) % self.capacity  
+        self.pos = (self.pos + 1) % self.capacity
 
     def append(self, transition: Transition, _) -> None:
         pass
@@ -277,14 +278,8 @@ class PrioritizedSequenceReplayMemory(Memory):
 
         batch = [self.memory[i] for i in indices]
 
-        self.stats["sampled_reward"] += np.sum([seq[-1].reward for seq in batch])
+        self.stats["sampled_reward"] += np.sum([seq[-1].reward_wo_cnt for seq in batch])
         self.stats["sampled_done_cnt"] += np.sum([seq[-1].done for seq in batch])
-        for seq in batch:
-            if seq[-1].reward != 0.0:
-                if seq[-1].reward not in self.stats["sampled_reward_cnt"]:
-                    self.stats["sampled_reward_cnt"][seq[-1].reward] = 1
-                else:
-                    self.stats["sampled_reward_cnt"][seq[-1].reward] += 1
 
         batch = list(map(list, zip(*batch)))  # list (history size) of list (batch) of tuples
         return batch, weights, indices
@@ -319,12 +314,11 @@ class CCPrioritizedReplayMemory(Memory):
 
         self.stats = {"reward_mean": 0.0, "reward_total": 0.0,
                       "timeout": 0, "tries_mean": 0, "tries_total": 0, "n_sampled": 0,
-                      "sampled_reward": 0.0, "sampled_done_cnt": 0, "sampled_reward_cnt": {}}
+                      "sampled_reward": 0.0, "sampled_done_cnt": 0}
 
     def reset_stats(self):
         self.stats["sampled_reward"] = 0.0
         self.stats["sampled_done_cnt"] = 0
-        self.stats["sampled_reward_cnt"] = {}
         self.stats["timeout"] = 0
         self.stats["tries_total"] = 0
         self.stats["tries_mean"] = 0
@@ -333,20 +327,20 @@ class CCPrioritizedReplayMemory(Memory):
     def append(self, transition: Transition, is_prior: bool = False) -> None:
         """Saves a transition."""
 
-        reward_total = self.stats["reward_total"] + transition.reward
+        reward_total = self.stats["reward_total"] + transition.reward_wo_cnt
 
         if is_prior:
             if len(self.alpha_memory) < self.alpha_capacity:
                 self.alpha_memory.append(transition)
             else:
-                reward_total -= self.alpha_memory[self.alpha_position].reward
+                reward_total -= self.alpha_memory[self.alpha_position].reward_wo_cnt
                 self.alpha_memory[self.alpha_position] = transition
             self.alpha_position = (self.alpha_position + 1) % self.alpha_capacity
         else:
             if len(self.beta_memory) < self.beta_capacity:
                 self.beta_memory.append(transition)
             else:
-                reward_total -= self.beta_memory[self.beta_position].reward
+                reward_total -= self.beta_memory[self.beta_position].reward_wo_cnt
                 self.beta_memory[self.beta_position] = transition
             self.beta_position = (self.beta_position + 1) % self.beta_capacity
 
@@ -403,14 +397,8 @@ class CCPrioritizedReplayMemory(Memory):
         if batch_beta:
             batch += batch_beta
 
-        self.stats["sampled_reward"] += np.sum([seq[-1].reward for seq in batch])
+        self.stats["sampled_reward"] += np.sum([seq[-1].reward_wo_cnt for seq in batch])
         self.stats["sampled_done_cnt"] += np.sum([seq[-1].done for seq in batch])
-        for seq in batch:
-            if seq[-1].reward != 0.0:
-                if seq[-1].reward not in self.stats["sampled_reward_cnt"]:
-                    self.stats["sampled_reward_cnt"][seq[-1].reward] = 1
-                else:
-                    self.stats["sampled_reward_cnt"][seq[-1].reward] += 1
 
         random.shuffle(batch)
         batch = list(map(list, zip(*batch)))  # list (history size) of list (batch) of tuples

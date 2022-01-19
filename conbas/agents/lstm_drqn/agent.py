@@ -445,6 +445,8 @@ class LstmDrqnAgent:
         step_avg = deque(maxlen=maxlen)
         loss_avg = deque(maxlen=maxlen)
         grad_norm_avg = deque(maxlen=maxlen)
+        buffer_sampled_done_avg = deque(maxlen=maxlen)
+        buffer_sampled_reward_avg = deque(maxlen=maxlen)
 
         save_frequency = self.config["checkpoint"]["save_frequency"]
 
@@ -510,6 +512,7 @@ class LstmDrqnAgent:
                         # calculate immediate reward from scores and normalize it
                         rewards = (np.array(scores) - old_scores) / max_scores
                         rewards = np.array(rewards, dtype=np.float32)
+                        rewards_wo_cnt = rewards
 
                         next_input_ids = self.extract_input(obs, infos, self.prev_commands)
 
@@ -524,23 +527,21 @@ class LstmDrqnAgent:
                             # calcualte reward including counting reward
                             rewards = rewards + counting_lambda * counting_reward
 
-                        for i, (input_id, command_index, reward, next_input_id, done, finished) \
+                        for i, (input_id, command_index, reward, next_input_id, done, finished, reward_wo_cnt) \
                                 in enumerate(
-                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, batch_finished)):
+                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, batch_finished, rewards_wo_cnt)):
 
                             # only append transitions from not finished or just recently finished episodes
                             if not_or_recently_finished[i]:
                                 if finished:
                                     not_or_recently_finished[i] = False
 
-                                # TODO make config to define is_prior
-                                # 1.) one transaction as positiv reward
-                                # 2.) goal reached -> done is true
                                 if (solved_is_prior and done) or (not solved_is_prior and reward > 0.0):
                                     is_prior[i] = True
 
                                 # done is True only if env is won/lost, not if step limit is reached
-                                memory_cache[i].append(Transition(input_id, command_index, reward, next_input_id, done, finished))
+                                memory_cache[i].append(Transition(input_id, command_index, reward, next_input_id,
+                                                                  done, finished, reward_wo_cnt))
 
                         input_ids = next_input_ids
 
@@ -611,23 +612,20 @@ class LstmDrqnAgent:
                     self.writer.add_scalar("general/counting_lambda", counting_lambda, global_step=training_steps)
 
                     # replay buffer
-                    self.writer.add_scalar("replay_buffer/mean_reward",
-                                           replay_memory.stats["reward_mean"], global_step=training_steps)
+                    buffer_sampled_reward_avg.append(replay_memory.stats["sampled_reward"])
+                    buffer_sampled_done_avg.append(replay_memory.stats["sampled_done_cnt"])
 
-                    self.writer.add_scalar("replay_buffer/timeout",
-                                           replay_memory.stats["timeout"], global_step=training_steps)
-                    self.writer.add_scalar("replay_buffer/tries_mean",
-                                           replay_memory.stats["tries_mean"], global_step=training_steps)
-                    self.writer.add_scalar("replay_buffer/n_sampled",
-                                           replay_memory.stats["n_sampled"], global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/mean_reward", replay_memory.stats["reward_mean"],
+                                           global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/timeout", replay_memory.stats["timeout"],
+                                           global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/tries_mean", replay_memory.stats["tries_mean"],
+                                           global_step=training_steps)
 
-                    self.writer.add_scalar("replay_buffer/sampled_reward",
-                                           replay_memory.stats["sampled_reward"], global_step=training_steps)
-                    self.writer.add_scalar("replay_buffer/sampled_done_cnt",
-                                           replay_memory.stats["sampled_done_cnt"], global_step=training_steps)
-                    for r, c in replay_memory.stats["sampled_reward_cnt"].items():
-                        self.writer.add_scalar("replay_buffer/sampled_cnt_{:.2f}".format(r),
-                                               c, global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/sampled_reward", np.mean(buffer_sampled_reward_avg),
+                                           global_step=training_steps)
+                    self.writer.add_scalar("replay_buffer/sampled_done_cnt", np.mean(buffer_sampled_done_avg),
+                                           global_step=training_steps)
                     replay_memory.reset_stats()
 
                     pbar.update(n=training_steps - old_traning_steps)
