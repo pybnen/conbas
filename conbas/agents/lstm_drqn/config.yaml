@@ -21,7 +21,7 @@ training:
   traning_steps: 1_200_000
   batch_size: 10
   max_steps_per_episode: 50
-  loss_fn: "smooth_l1"
+  loss_fn: "smooth_l1"  # ('smooth_l1', 'mse')
   use_target_network: true
   use_double_DQN: true
 
