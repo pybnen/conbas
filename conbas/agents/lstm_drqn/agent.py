@@ -699,9 +699,8 @@ class LstmDrqnAgent:
             next_q_values_target, (h_target, c_target) = self.q_values(input_tensor, input_lengths,
                                                                        self.lstm_dqn_target,
                                                                        h_target, c_target)
-        # TODO check off by one error
-        # if bootstrap_state != 0:
-        #    q_values, h, c = q_values.detach(), h.detach(), c.detach()
+        if bootstrap_state != 0:
+            q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
         for i, batch in enumerate(sequence_batch):
             # calculate q values for next state
@@ -712,10 +711,6 @@ class LstmDrqnAgent:
                                                                            next_input_lengths,
                                                                            self.lstm_dqn_target,
                                                                            h_target, c_target)
-
-            # TODO check off by one error
-            if i < bootstrap_state:
-                q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
             if i >= update_from:
                 command_indices = torch.stack(batch.command_index, dim=0).to(self.device)
@@ -735,6 +730,8 @@ class LstmDrqnAgent:
 
             # next q values are current y values
             q_values = next_q_values
+            if i < (bootstrap_state - 1) or i == (len(sequence_batch) - 1):
+                q_values, h, c = q_values.detach(), h.detach(), c.detach()
 
         loss = torch.stack(losses).mean(dim=0)
         priorities = np.stack(priorities).mean(axis=0)
