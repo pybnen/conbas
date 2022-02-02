@@ -12,9 +12,9 @@ general:
   counting_reward:
     type: false # (false, episodic, cumulative)
     lambda_annealed_args:
-      upper_bound: 1.0
-      lower_bound: 1.0
-      duration: 1
+      init_temp: 1.0
+      min_temp: 1.0
+      decay: 1
     beta: 1.0
 
 training:

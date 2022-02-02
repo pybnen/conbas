@@ -37,6 +37,10 @@ def words_to_ids(words: List[str], word2id: Dict[str, int]) -> List[int]:
     return ids
 
 
+def geom_decac_fn(init_temp, decay, min_temp):
+    return lambda temp: max(init_temp * decay**temp, min_temp)
+
+
 def linear_decay_fn(upper_bound, lower_bound, duration):
     return lambda step:  max(lower_bound, upper_bound - (upper_bound - lower_bound) * step / duration)
 
