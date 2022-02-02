@@ -441,6 +441,7 @@ class LstmDrqnAgent:
         # define logging data structures --------------------------------------
         maxlen = 100
         counting_avg = deque(maxlen=maxlen)
+        counting_adj_avg = deque(maxlen=maxlen)
         score_avg = deque(maxlen=maxlen)
         step_avg = deque(maxlen=maxlen)
         loss_avg = deque(maxlen=maxlen)
@@ -465,6 +466,7 @@ class LstmDrqnAgent:
                     self.init(obs, infos)
 
                     counting_rewards = np.zeros(len(obs))
+                    counting_rewards_adj = np.zeros(len(obs))
                     scores = np.array([0] * len(obs))
                     max_scores = np.array(infos["max_score"])
                     steps = [0] * len(obs)
@@ -522,10 +524,13 @@ class LstmDrqnAgent:
                         if use_counting_reward:
                             new_state_str = self.extract_state_str(infos)
                             counting_reward = np.array(self.get_counting_reward(new_state_str))
+                            counting_reward_adj = counting_lambda * counting_reward
+
                             counting_rewards += counting_reward
+                            counting_rewards_adj += counting_reward_adj
 
                             # calcualte reward including counting reward
-                            rewards = rewards + counting_lambda * counting_reward
+                            rewards = rewards + counting_reward_adj
 
                         for i, (input_id, command_index, reward, next_input_id, done, finished, reward_wo_cnt) \
                                 in enumerate(
@@ -580,6 +585,7 @@ class LstmDrqnAgent:
                                 replay_memory.append(transition, prior)
 
                     counting_avg.append(np.mean(counting_rewards))
+                    counting_adj_avg.append(np.mean(counting_rewards_adj))
                     score_avg.append(np.mean(scores))  # scores contains final scores
                     step_avg.append(np.mean(steps))
                     if losses:
@@ -589,7 +595,10 @@ class LstmDrqnAgent:
 
                     # display/save statistics
                     self.writer.add_scalar('avg_counting_reward', np.mean(counting_avg), training_steps)
-                    self.writer.add_scalar('curr_counting_reward', counting_avg[-1] / max_scores[0], training_steps)
+                    self.writer.add_scalar('curr_counting_reward', counting_avg[-1], training_steps)
+
+                    self.writer.add_scalar('avg_counting_reward_adj', np.mean(counting_adj_avg), training_steps)
+                    self.writer.add_scalar('curr_counting_reward_adj', counting_adj_avg[-1], training_steps)
 
                     self.writer.add_scalar('avg_score', np.mean(score_avg) / max_scores[0], training_steps)
                     self.writer.add_scalar('curr_score', score_avg[-1] / max_scores[0], training_steps)
