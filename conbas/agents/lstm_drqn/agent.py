@@ -27,7 +27,7 @@ from textworld import EnvInfos
 
 from .model import LstmDrqnModel
 from ..helpers.policy import AnnealedEpsGreedyQPolicy
-from ..helpers.utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn, geom_decac_fn
+from ..helpers.utils import preproc, words_to_ids, linear_decay_fn, linear_inc_fn, geom_decay_fn
 from .core import Transition, TransitionBatch, PrioritizedReplayMemory, CCPrioritizedReplayMemory, PrioritizedSequenceReplayMemory
 
 
@@ -436,7 +436,7 @@ class LstmDrqnAgent:
             and self.config["general"]["counting_reward"]["type"] == 'episodic'
         lambda_annealed_args = self.config["general"]["counting_reward"]["lambda_annealed_args"]
         counting_lambda = lambda_annealed_args["init_temp"]
-        counting_lambda_fn = geom_decac_fn(**lambda_annealed_args)
+        counting_lambda_fn = geom_decay_fn(**lambda_annealed_args)
 
         # define logging data structures --------------------------------------
         maxlen = 100
