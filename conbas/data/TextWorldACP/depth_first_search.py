@@ -5,9 +5,9 @@ from general import extract_state, State, get_environment, \
     state_eq_wo_feedback, log_state
 import csv
 from glob import glob
+import argparse
 
-logdir = Path(f"./dfs/logs_csv/")
-logdir.mkdir(parents=True, exist_ok=True)
+
 visited: List[State] = []
 
 
@@ -28,63 +28,73 @@ def backtrack(env, path):
     env.reset()
     for command in path:
         env.step(command)
-   
+
 
 def filter_cmds(cmd):
     # return cmd.find("examine") != 0 and cmd != "inventory" and cmd != "look"   
     return cmd != "inventory" and cmd != "look"   
-   
-   
+
+
 def depth_first_search_iter(env):
     global visited
-    
+
     all_commands = set()
-   
+
     ob, infos = env.reset()
     game_state = (ob, infos, False)
     path = []
     state, admissible_commands = extract_state(game_state)
-    
+
     stack = []
     stack.append((state, admissible_commands, copy(path)))
-    
+
     while len(stack) != 0:
         state, admissible_commands, path = stack.pop()
         backtrack(env, path)
-        
+
         all_commands.update(admissible_commands)
-        
+
         if has_visited(state):
             continue
-        
+
         # append to visited
         append_visited(state)
-            
+
         if state.done:
             continue
-        
+
         filtered_commands = list(filter(filter_cmds, admissible_commands))
         for command in filtered_commands:
             path.append(command)
             ob, _, done, infos = env.step(command)
-            
+
             next_game_state = (ob, infos, done)
             next_state, next_admissible_commands = extract_state(next_game_state)
 
             if not has_visited(next_state):
                 stack.append((next_state, next_admissible_commands, copy(path)))
-            
+
             # reset prev state
             path.pop()
             backtrack(env, path)
-    
+
     return all_commands
-   
-   
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generates TextWorld ACP dataset.")
+    parser.add_argument("game_dir", type=str)
+    parser.add_argument("-log_dir", type=str)
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    game_dir = "./SaladWorld/"
-    game_files = sorted(glob(game_dir + "**/*.ulx", recursive=True))
-    
+    args = parse_args()
+
+    game_files = sorted(glob(args.game_dir + "**/*.ulx", recursive=True))
+    logdir = Path(args.log_dir)
+    logdir.mkdir(parents=True, exist_ok=True)
+
     for game_file in game_files:
         print(game_file)
         logfile = logdir / (Path(game_file).name + "_states.txt")
@@ -92,12 +102,8 @@ if __name__ == "__main__":
             csv_writer = csv.writer(log_fp)
             env = get_environment(game_file)
             visited = []
-            
+
             commands = depth_first_search_iter(env)
 
             with open(logdir / (Path(game_file).name + "_cmds.txt"), "w") as cmd_fp:
                 cmd_fp.write("\n".join(commands))
-
-
-
-
