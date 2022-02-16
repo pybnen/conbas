@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from locale import D_T_FMT
 from nltk.tokenize import word_tokenize
 import torch
 import torch.cuda
@@ -22,9 +23,6 @@ def evaluate(seq2seq, data, commands, commands_mask, device, commands_arr):
 
     label = sorted([commands_arr[i] for i in admissible_cmds.cpu()[:, 0].tolist() if i != 0])
     prediction = sorted([commands_arr[i] for i in idxs.cpu()[:, 0].tolist() if i != 0])
-
-    print("Eval:")
-
     print("Label:", label)
     print("Pred :", prediction)
     print("------------------------------\n")
@@ -51,7 +49,7 @@ def run():
         = get_dataloader(args.dataset_dir, args.batch_size,
                          tokenizer=word_tokenize, num_workers=num_workers)
     vocab_size = len(vocab)
-    
+
     # get device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -105,7 +103,11 @@ def run():
         sys.stdout.flush()
         print('Loss: {}'.format(running_loss))
         if epoch % 10 == 0:
-            data = iter(dl).next()
+            print("Eval:")
+            data = iter(dl_train).next()
+            evaluate(seq2seq, data, commands, commands_mask, device, commands_arr)
+
+            data = iter(dl_valid).next()
             evaluate(seq2seq, data, commands, commands_mask, device, commands_arr)
 
     print('Finished Training')
