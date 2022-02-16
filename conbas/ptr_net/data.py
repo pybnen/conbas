@@ -2,17 +2,12 @@ from typing import List
 from torch.utils.data.dataset import Dataset
 import numpy as np
 from torch.utils.data.dataloader import DataLoader
-from glob import glob
 import string
 # filter out stop words
 from nltk.corpus import stopwords
 import torch
 from tqdm import tqdm
-
-STATE_TOKEN = "[STATE]"
-SEP_TOKEN = "[SEP]"
-CMD_TOKEN = "[CMD]"
-ADMISSIBLE_CMDS_TOKEN = "[AD_CMD]"
+import csv
 
 PAD_TOKEN = "[PAD]"
 SOS_TOKEN = "[SOS]"
@@ -77,15 +72,11 @@ class Vocabulary:
 
 
 def preprocess_line(line, tokenizer, vocab: Vocabulary, remove_stopwords=True):
-    words = line.split()
+    # remove spaces
     # TODO check if: re.sub("\s+", " ", line) is cheaper
     # TODO check if: while "" in words: words.remove("") is cheaper
+    words = line.split()
     words = [w for w in words if len(w) > 0]
-
-    # remove all special token from dataset
-    words = [w for w in words if w not in [STATE_TOKEN, SEP_TOKEN, CMD_TOKEN, ADMISSIBLE_CMDS_TOKEN]]
-
-    # join them together
     line = " ".join(words)
 
     # tokenizer
@@ -108,14 +99,13 @@ def preprocess_line(line, tokenizer, vocab: Vocabulary, remove_stopwords=True):
     return [vocab.word_2_id(w) for w in tokens]
 
 
-def parse_line(line: str, commands: List[str], tokenizer, vocab: Vocabulary):
-    state_line, admissible_cmds_line = line.split(ADMISSIBLE_CMDS_TOKEN)
+def parse_row(row: List[str], commands: List[str], tokenizer, vocab: Vocabulary):
+    state_line, admissible_cmds = row[0], row[1:]
     state = preprocess_line(state_line, tokenizer, vocab)
 
-    admissible_cmds = admissible_cmds_line.split(SEP_TOKEN)    
     admissible_cmds = [cmd.strip() for cmd in admissible_cmds]
     filtered_cmds = [cmd for cmd in admissible_cmds
-                     if cmd.strip() not in ["look", "inventory"]]
+                     if cmd not in ["look", "inventory"]]
 
     # will throw exception of admissible commands not found -> good
     admissible_idx = [commands.index(cmd) for cmd in filtered_cmds]
@@ -124,27 +114,28 @@ def parse_line(line: str, commands: List[str], tokenizer, vocab: Vocabulary):
 
 class GameStateDataset(Dataset):
 
-    def __init__(self, directory, commands, tokenizer):
+    def __init__(self, state_file, commands_file, tokenizer, vocab: Vocabulary):
         super().__init__()
         self.states = []
         self.admissible_commands = []
-        self.vocab = Vocabulary()
+        self.vocab = vocab
 
-        for file in glob(directory + "/**/*", recursive=True):
-            with open(file, 'r') as fp:
-                lines = fp.readlines()
-                with tqdm(lines) as pbar:
-                    for line in pbar:
-                        state, admissible_cmds = parse_line(line, commands, tokenizer, self.vocab)
-                        self.states.append(state)
-                        self.admissible_commands.append(admissible_cmds)
+        with open(commands_file, "r") as fp:
+            self.commands_arr = [EOS_TOKEN] + [line.strip() for line in fp.readlines()]
+            self.commands = [preprocess_line(cmd, tokenizer, self.vocab) for cmd in self.commands_arr]
+            max_len = max([len(cmd) for cmd in self.commands])
+            padded_cmds, cmds_mask = pad_sequences(self.commands, max_len, 'int')
+            self.commands = torch.tensor(padded_cmds).T
+            self.commands_mask = torch.tensor(cmds_mask).T
 
-        # prepare command list
-        self.commands = [preprocess_line(cmd, tokenizer, self.vocab) for cmd in commands]
-        max_len = max([len(cmd) for cmd in self.commands])
-        padded_cmds, cmds_mask = pad_sequences(self.commands, max_len, 'int')
-        self.commands = torch.tensor(padded_cmds).T
-        self.commands_mask = torch.tensor(cmds_mask).T
+        with open(state_file, "r") as fp:
+            lines = fp.readlines()
+            reader = csv.reader(lines)
+            with tqdm(reader) as pbar:
+                for row in pbar:
+                    state, admissible_cmds = parse_row(row, self.commands_arr, tokenizer, self.vocab)
+                    self.states.append(state)
+                    self.admissible_commands.append(admissible_cmds)
 
     def __getitem__(self, index):
         return self.states[index], self.admissible_commands[index]
@@ -169,7 +160,15 @@ def create_batch(data):
         torch.tensor(admissible_cmds_mask_batch).T
 
 
-def get_dataloader(directory, commands, batch_size, tokenizer, num_workers):
-    ds = GameStateDataset(directory, commands, tokenizer)
-    dl = DataLoader(ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=create_batch)
-    return dl
+def get_dataloader(directory, batch_size, tokenizer, num_workers):
+    vocab = Vocabulary()
+
+    ds_train = GameStateDataset(directory + "/train.txt", directory + "/commands.txt", tokenizer, vocab)
+    dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, num_workers=num_workers,
+                          collate_fn=create_batch)
+
+    ds_valid = GameStateDataset(directory + "/valid.txt", directory + "/commands.txt", tokenizer, vocab)
+    dl_valid = DataLoader(ds_valid, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                          collate_fn=create_batch)
+
+    return dl_train, dl_valid, vocab, ds_train.commands_arr
