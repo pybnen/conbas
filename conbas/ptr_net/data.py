@@ -8,6 +8,8 @@ from nltk.corpus import stopwords
 import torch
 from tqdm import tqdm
 import csv
+import random
+import numpy as np
 
 PAD_TOKEN = "[PAD]"
 SOS_TOKEN = "[SOS]"
@@ -160,15 +162,23 @@ def create_batch(data):
         torch.tensor(admissible_cmds_mask_batch).T
 
 
-def get_dataloader(directory, batch_size, tokenizer, num_workers):
+def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+
     vocab = Vocabulary()
+
+    g = torch.Generator()
+    g.manual_seed(seed)
 
     ds_train = GameStateDataset(directory + "/train.txt", directory + "/commands.txt", tokenizer, vocab)
     dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, num_workers=num_workers,
-                          collate_fn=create_batch)
+                          collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
     ds_valid = GameStateDataset(directory + "/valid.txt", directory + "/commands.txt", tokenizer, vocab)
     dl_valid = DataLoader(ds_valid, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                          collate_fn=create_batch)
+                          collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
     return dl_train, dl_valid, vocab, ds_train.commands_arr
