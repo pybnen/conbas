@@ -1,4 +1,3 @@
-from collections import namedtuple
 import re
 from dataclasses import dataclass
 import textworld
@@ -16,8 +15,7 @@ class State:
     last_command: str
     admissible_commands: List[str]
     done: bool
-    
-    
+
 
 @dataclass
 class Transition:
@@ -25,16 +23,15 @@ class Transition:
     s2: State
 
 
-
 def preprocess(text: str, type: str = None) -> str:
     # merge all spaces (whitespace, tab, linefeed)
     # to a single whitespace
     text = re.sub("\s+", " ", text)
-    
+
     if type == 'feedback':
         # remove ascii art from text
         text = text.replace(INTRO, "")
-    
+
     # strip beginning/ending spaces
     text = text.strip()
     return text
@@ -42,14 +39,15 @@ def preprocess(text: str, type: str = None) -> str:
 
 def extract_state(game_state):
     infos = game_state[1]
-    
+
     description = preprocess(infos['description'])
     inventory = preprocess(infos['inventory'])
     feedback = preprocess(infos['feedback'], type='feedback')
     last_command = preprocess(infos['last_command'] or "")
-    admissible_commands = [preprocess(cmd) for cmd in infos['admissible_commands']]
+    admissible_commands = [preprocess(cmd)
+                           for cmd in infos['admissible_commands']]
     done = game_state[2]
-    
+
     return State(description,
                  inventory,
                  feedback,
@@ -60,50 +58,49 @@ def extract_state(game_state):
 
 def state_eq(s1: State, s2: State):
     return s1.description == s2.description and \
-            s1.inventory == s2.inventory and \
-            s1.feedback == s2.feedback
-         
-            
+        s1.inventory == s2.inventory and \
+        s1.feedback == s2.feedback
+
+
 def state_eq_wo_feedback(s1: State, s2: State):
     return s1.description == s2.description and \
-            s1.inventory == s2.inventory and \
-            s1.admissible_commands == s2.admissible_commands
-         
-            
-            
-def transition_eq(t1: Transition, t2: Transition):    
+        s1.inventory == s2.inventory and \
+        s1.admissible_commands == s2.admissible_commands
+
+
+def transition_eq(t1: Transition, t2: Transition):
     return state_eq_wo_feedback(t1.s1, t2.s1) and \
         state_eq_wo_feedback(t1.s2, t2.s2) and \
         t1.s2.admissible_commands == t2.s2.admissible_commands
-    
-        
-def log_transition(csv_writer, t: Transition):    
+
+
+def log_transition(csv_writer, t: Transition):
     # def log_state(s: State):
     #     return f"{s.description} [SEP] {s.inventory} [SEP] {s.feedback}"
-    
+
     # def log_cmds(s: State):
     #     cmds = s.admissible_commands
     #     str_cmds = cmds[0]
     #     for cmd in cmds[1:]:
     #         str_cmds += f" [SEP] {cmd}"
     #     return str_cmds
-        
+
     # log_entry = f"[STATE] {log_state(t.s1)} " + \
     #     f"[CMD] {t.s2.last_command} " + \
     #     f"[STATE] {log_state(t.s2)} " + \
     #     f"[AD_CMD] {log_cmds(t.s2)}\n"
     # log_fp.write(log_entry)
-    
+
     state = f"{t.s1.description} {t.s1.inventory} "
     state += f"{t.s2.last_command} "
     state += f"{t.s2.feedback} {t.s2.description} {t.s2.inventory}"
-    row = [state, *t.s2.admissible_commands]            
+    row = [state, *t.s2.admissible_commands]
     csv_writer.writerow(row)
-    
-    
+
+
 def log_state(csv_writer, s: State):
     state_str = f"{s.description} {s.inventory}"
-    row = [state_str, *s.admissible_commands] 
+    row = [state_str, *s.admissible_commands]
     csv_writer.writerow(row)
 
 

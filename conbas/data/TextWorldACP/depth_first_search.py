@@ -6,6 +6,7 @@ from general import extract_state, State, get_environment, \
 import csv
 from glob import glob
 import argparse
+from tqdm import tqdm
 
 
 visited: List[State] = []
@@ -35,7 +36,7 @@ def filter_cmds(cmd):
     return cmd != "inventory" and cmd != "look"   
 
 
-def depth_first_search_iter(env):
+def depth_first_search_iter(env, max_depth=-1):
     global visited
 
     all_commands = set()
@@ -60,7 +61,7 @@ def depth_first_search_iter(env):
         # append to visited
         append_visited(state)
 
-        if state.done:
+        if state.done or max_depth != -1 and len(path) > max_depth:
             continue
 
         filtered_commands = list(filter(filter_cmds, admissible_commands))
@@ -84,7 +85,8 @@ def depth_first_search_iter(env):
 def parse_args():
     parser = argparse.ArgumentParser(description="Generates TextWorld ACP dataset.")
     parser.add_argument("game_dir", type=str)
-    parser.add_argument("-log_dir", type=str)
+    parser.add_argument("-log_dir", type=str, required=True)
+    parser.add_argument("-max_depth", type=int, default=13)
     return parser.parse_args()
 
 
@@ -95,15 +97,17 @@ if __name__ == "__main__":
     logdir = Path(args.log_dir)
     logdir.mkdir(parents=True, exist_ok=True)
 
-    for game_file in game_files:
-        print(game_file)
-        logfile = logdir / (Path(game_file).name + "_states.txt")
-        with open(logfile, "w") as log_fp:
-            csv_writer = csv.writer(log_fp)
-            env = get_environment(game_file)
-            visited = []
+    with tqdm(game_files) as pbar:
+        for game_file in pbar:
+            pbar.set_description(game_file)
+            logfile = logdir / (Path(game_file).name + "_states.txt")
+            with open(logfile, "w") as log_fp:
+                csv_writer = csv.writer(log_fp)
+                env = get_environment(game_file)
+                visited = []
 
-            commands = depth_first_search_iter(env)
+                commands = depth_first_search_iter(env, max_depth=args.max_depth)
+                pbar.set_postfix({"states": len(visited)})
 
-            with open(logdir / (Path(game_file).name + "_cmds.txt"), "w") as cmd_fp:
-                cmd_fp.write("\n".join(commands))
+                with open(logdir / (Path(game_file).name + "_cmds.txt"), "w") as cmd_fp:
+                    cmd_fp.write("\n".join(commands))
