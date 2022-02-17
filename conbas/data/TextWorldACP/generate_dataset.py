@@ -70,7 +70,7 @@ def parse_args():
     parser.add_argument("log_dir", type=str)
     parser.add_argument("-out_dir", type=str, default="./data/TextWorldACP")
     parser.add_argument("-train_split", type=float, default=.85)
-    parser.add_argument("-valid_split", type=float, default=.1)
+    parser.add_argument("-valid_split", type=float, default=.05)
     parser.add_argument("-seed", type=int, default=2_183_154_691)
     return parser.parse_args()
 

@@ -12,23 +12,27 @@ import numpy as np
 
 from data import get_dataloader
 from model import Seq2Seq
+from logger import Logger
+
 
 torch.backends.cudnn.benchmark = False
-try:
-    torch.use_deterministic_algorithms(True)
-except AttributeError as e:
-    print(e)
+# try:
+#     torch.use_deterministic_algorithms(True)
+# except AttributeError as e:
+#     print(e)
 
 
 @torch.no_grad()
-def evaluate(seq2seq, dl_valid, commands, commands_mask, device, commands_arr):
+def evaluate(seq2seq, dl_valid, commands, commands_mask, device, commands_arr, epoch, logger):
     seq2seq.eval()
-    running_loss = 0.0
 
+    logger.reset()
     for data in dl_valid:
         states, states_masks, admissible_cmds, admissible_cms_mask = data
         states, states_masks = states.to(device), states_masks.to(device)
         admissible_cmds = admissible_cmds.to(device)
+
+        batch_size = states.size(1)
 
         outputs, idxs = seq2seq(states, states_masks, commands, commands_mask)
 
@@ -43,8 +47,27 @@ def evaluate(seq2seq, dl_valid, commands, commands_mask, device, commands_arr):
         admissible_cmds_flatt = admissible_cmds.view(-1)
 
         loss = F.cross_entropy(outputs_flat, admissible_cmds_flatt)
-        running_loss += loss.item()
-    return running_loss
+
+        # log statistics
+        admissible_cmds_flatt = admissible_cmds_flatt.detach().cpu()
+        idxs_ = idxs.detach().cpu().T.reshape(-1)
+        mask = ((idxs_ + admissible_cmds_flatt) > 0).float()
+        accuracy = torch.sum((idxs_ == admissible_cmds_flatt).float() * mask) / mask.sum()
+
+        logger.add_step(loss.item(), accuracy.item(), batch_size)
+
+    logger.end_batch()
+
+    if epoch % 10 == 0:
+        ob = dl_valid.dataset.vocab.to_sentence(states.cpu()[states_masks[:, 0].bool(), 0].tolist())
+        label = sorted([commands_arr[i] for i in admissible_cmds.cpu()[:, 0].tolist() if i != 0])
+        prediction = sorted([commands_arr[i] for i in idxs.cpu()[:, 0].tolist() if i != 0])
+        print("\n\nObservation", ob)
+        print("------------------------------\n")
+        print("Label:", label)
+        print("------------------------------\n")
+        print("Pred :", prediction)
+        print("------------------------------\n")
 
 
 def set_rng_seed(seed: int):
@@ -87,12 +110,13 @@ def run():
     seq2seq = Seq2Seq(device, vocab_size, vocab.word_2_id("[PAD]"))
     seq2seq = seq2seq.to(device)
 
+    # logger
+    logger = Logger()
+    logger_val = Logger()
+
     # get optimizer
     # TODO params of all stuffs
     optimizer = optim.Adam(seq2seq.parameters(), lr=lr)
-
-    # get loss criterium
-    criterion = nn.MSELoss()
 
     # train
     commands = dl_train.dataset.commands
@@ -101,12 +125,14 @@ def run():
     for epoch in range(n_epochs):
         seq2seq.train()
 
-        running_loss = 0.0
+        logger.reset()
         with tqdm(dl_train) as pbar:
             for data in pbar:
                 states, states_masks, admissible_cmds, admissible_cms_mask = data
                 states, states_masks = states.to(device), states_masks.to(device)
                 admissible_cmds = admissible_cmds.to(device)
+
+                batch_size = states.size(1)
 
                 # zero the parameter gradients
                 # forward + backward + optimize
@@ -122,18 +148,26 @@ def run():
                 outputs_flat = outputs.view(-1, outputs.size(-1))
                 admissible_cmds_flatt = admissible_cmds.view(-1)
 
+                # TODO mask out padding
                 loss = F.cross_entropy(outputs_flat, admissible_cmds_flatt)
-
-                # loss = criterion(outputs, admissible_cmds)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                running_loss += loss.item()
 
+                # log statistics
+                admissible_cmds_flatt = admissible_cmds_flatt.detach().cpu()
+                idxs = idxs.detach().cpu().T.reshape(-1)
+                mask = ((idxs + admissible_cmds_flatt) > 0).float()
+                accuracy = torch.sum((idxs == admissible_cmds_flatt).float() * mask) / mask.sum()
+
+                logger.add_step(loss.item(), accuracy.item(), batch_size)
+        logger.end_batch()
+        
         sys.stdout.flush()
-        eval_loss = evaluate(seq2seq, dl_valid, commands, commands_mask, device, commands_arr)
-        print('train loss: {}'.format(running_loss))
-        print('train loss: {}'.format(eval_loss))
+        evaluate(seq2seq, dl_valid, commands, commands_mask, device, commands_arr, epoch, logger_val)
+
+        print("train     :", logger.to_str())
+        print("validation:", logger_val.to_str())
     print('Finished Training')
 
 
