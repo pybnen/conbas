@@ -75,22 +75,6 @@ def transition_eq(t1: Transition, t2: Transition):
 
 
 def log_transition(csv_writer, t: Transition):
-    # def log_state(s: State):
-    #     return f"{s.description} [SEP] {s.inventory} [SEP] {s.feedback}"
-
-    # def log_cmds(s: State):
-    #     cmds = s.admissible_commands
-    #     str_cmds = cmds[0]
-    #     for cmd in cmds[1:]:
-    #         str_cmds += f" [SEP] {cmd}"
-    #     return str_cmds
-
-    # log_entry = f"[STATE] {log_state(t.s1)} " + \
-    #     f"[CMD] {t.s2.last_command} " + \
-    #     f"[STATE] {log_state(t.s2)} " + \
-    #     f"[AD_CMD] {log_cmds(t.s2)}\n"
-    # log_fp.write(log_entry)
-
     state = f"{t.s1.description} {t.s1.inventory} "
     state += f"{t.s2.last_command} "
     state += f"{t.s2.feedback} {t.s2.description} {t.s2.inventory}"
@@ -104,13 +88,15 @@ def log_state(csv_writer, s: State):
     csv_writer.writerow(row)
 
 
-def get_environment(file):
+def get_environment(file, additional_infos=False):
     env_infos = textworld.EnvInfos()
     env_infos.admissible_commands = True
     env_infos.feedback = True
     env_infos.inventory = True
     env_infos.description = True
     env_infos.last_command = True
+    if additional_infos:
+        env_infos.extras = ["walkthrough"]
 
     wrappers = [Filter]
     env = textworld.start(file, infos=env_infos, wrappers=wrappers)

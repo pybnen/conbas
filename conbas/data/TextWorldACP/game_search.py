@@ -1,4 +1,3 @@
-from copy import copy
 from typing import List
 from pathlib import Path
 from general import extract_state, State, get_environment, \
@@ -7,55 +6,12 @@ import csv
 from glob import glob
 import argparse
 from tqdm import tqdm
-import time
-import functools
-from copy import deepcopy, copy
+from copy import copy
 import random
 
 
 all_commands = set()
 visited: List[State] = []
-process_t_in = {}
-perf_t_in = {}
-
-
-def profiling_reset():
-    global process_t_in, perf_t_in
-    process_t_in = {}
-    perf_t_in = {}
-
-
-def profiling_summary():
-    print("Profiling:")
-    for key, time_ in perf_t_in.items():
-        print(f"{key}: {time_:.2f}")
-
-
-def profile_fn(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        global perf_t_in, perf_t_in
-        start = start_timing()
-        ret = func(*args, **kwargs)
-        stop_timing(func.__name__, start)
-        return ret
-    return wrapper
-
-
-def start_timing():
-    return time.process_time(), time.perf_counter()
-
-
-def stop_timing(key, start):
-    global process_t_in, perf_t_in
-    process_t, perf_t = start
-
-    if key not in process_t_in:
-        process_t_in[key] = 0
-        perf_t_in[key] = 0
-
-    process_t_in[key] += time.process_time() - process_t
-    perf_t_in[key] += time.perf_counter() - perf_t
 
 
 def append_visited(state: State):
@@ -71,7 +27,6 @@ def has_visited(state: State):
     return len(filtered) != 0
 
 
-@profile_fn
 def backtrack(env, path):
     env.reset()
     for command in path:
@@ -114,7 +69,6 @@ def depth_first_search_aux(env, state, admissible_commands, path, max_depth, bra
         backtrack(env, path)
 
 
-@profile_fn
 def depth_first_search(env, max_depth=-1, branching_factor=-1):
     path = []
     ob, infos = env.reset()
@@ -125,7 +79,6 @@ def depth_first_search(env, max_depth=-1, branching_factor=-1):
                            branching_factor)
 
 
-@profile_fn
 def depth_first_search_iter(env, max_depth=-1, branching_factor=-1):
     global visited, all_commands
 
@@ -169,7 +122,6 @@ def depth_first_search_iter(env, max_depth=-1, branching_factor=-1):
             backtrack(env, path)
 
 
-@profile_fn
 def breadth_first_search(env, max_depth=-1, branching_factor=-1):
     global visited, all_commands
 
@@ -240,7 +192,6 @@ if __name__ == "__main__":
                 csv_writer = csv.writer(log_fp)
                 env = get_environment(game_file)
 
-                profiling_reset()
                 visited = []
                 all_commands = set()
                 # depth_first_search(env, max_depth=args.max_depth, branching_factor=args.branching_factor)
@@ -248,8 +199,6 @@ if __name__ == "__main__":
                 # breadth_first_search(env,
                 #                     max_depth=args.max_depth,
                 #                     branching_factor=args.branching_factor)
-
-                profiling_summary()
 
                 pbar.set_postfix({"states": len(visited)})
                 with open(logdir / (Path(game_file).name + "_cmds.txt"), "w") as cmd_fp:
