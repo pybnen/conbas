@@ -2,11 +2,12 @@ import argparse
 from dataclasses import dataclass
 from glob import glob
 from tqdm import tqdm
-import csv
 import numpy as np
 import random
-from typing import Any, List, Set, Optional
+from typing import Any, List, Set, Optional, Dict, Tuple
 from pathlib import Path
+import json
+
 
 @dataclass
 class Stats:
@@ -16,6 +17,7 @@ class Stats:
     unique_cmds: int = 0
     mean_cmds_per_state: float = 0.0
     std_cmds_per_state: float = 0.0
+    max_cmd_list: int = 0
 
 
 def set_rng_seed(seed: int):
@@ -36,6 +38,7 @@ def stats_to_str(s: Stats, title: str, print_lines=False, not_in_train: Optional
     stats_str += f"Commands:             {s.cmds}\n"
     stats_str += f"Unique Commands:      {s.unique_cmds}\n"
     stats_str += f"Commands per State:   {s.mean_cmds_per_state:.2f} (std. {s.std_cmds_per_state:.4f})\n"
+    stats_str += f"Max Commandlist:      {s.max_cmd_list:.2f}\n"
 
     if not_in_train is not None:
         stats_str += f"Command not in Train: {len(not_in_train)}\n"
@@ -44,9 +47,9 @@ def stats_to_str(s: Stats, title: str, print_lines=False, not_in_train: Optional
 
 
 def parse_files(files: List[str]) -> Any:
-    states_cmds_mapping = {}
+    states_map: Dict[str, Tuple[str, Set[str], Set[str]]] = {}
     stats = Stats()
-    from_file = {}
+    from_file: Dict[str, List[str]] = {}
 
     # gather all states
     for file in files:
@@ -57,25 +60,30 @@ def parse_files(files: List[str]) -> Any:
         file_stem = Path(file).stem
         from_file[file_stem] = []
 
-        reader = csv.reader(lines)
-        with tqdm(reader) as pbar:
-            for row in pbar:
-                state, admissible_cmds = row[0], set(row[1:])
+        with tqdm(lines) as pbar:
+            for line in pbar:
+                ob, admissible_cmds, cmds = json.loads(line)
+                admissible_cmds = set(admissible_cmds)
+                cmds = set(cmds)
 
-                if state not in states_cmds_mapping:
-                    states_cmds_mapping[state] = admissible_cmds
-                    from_file[file_stem].append(state)
+                if ob not in states_map:
+                    states_map[ob] = (ob, admissible_cmds, cmds)
+                    from_file[file_stem].append(ob)
                 else:
-                    states_cmds_mapping[state].update(admissible_cmds)
+                    states_map[ob][1].update(admissible_cmds)
+                    states_map[ob][2].update(cmds)
 
     # order all admissible commands
     rows = []
     total_commands = set()
     n_commands = []
-    for state, admissible_cmds in states_cmds_mapping.items():
+    for _, (ob, admissible_cmds, cmds) in states_map.items():
         total_commands.update(admissible_cmds)
         n_commands.append(len(admissible_cmds))
-        rows.append([state, *sorted(list(admissible_cmds))])
+        stats.max_cmd_list = max(stats.max_cmd_list, len(cmds))
+        rows.append([ob,
+                     sorted(list(admissible_cmds)),
+                     sorted(list(cmds))])
 
     total_commands = sorted(list(total_commands))
 
@@ -127,10 +135,10 @@ def create_dataset(rows: List[List[str]]):
 
     total_commands = set()
     n_commands = []
-    for row in rows:
-        admissible_cmds = row[1:]
+    for (_, admissible_cmds, cmds) in rows:
         total_commands.update(admissible_cmds)
         n_commands.append(len(admissible_cmds))
+        stats.max_cmd_list = max(stats.max_cmd_list, len(cmds))
 
     # stats
     n_commands = np.array(n_commands)
@@ -145,20 +153,23 @@ def create_dataset(rows: List[List[str]]):
 
 def write_dataset(out_dir, rows, name):
     with open(out_dir / f"{name}.txt", "w") as fp:
-        writer = csv.writer(fp)
-        writer.writerows(rows)
+        for row in rows:
+            fp.write(json.dumps(row) + "\n")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generates TextWorld ACP dataset.")
     parser.add_argument("log_dir", type=str)
     parser.add_argument("-out_dir", type=str, default="./data/TextWorldACP")
+    parser.add_argument("-seed", type=int, default=2_183_154_691)
+
     parser.add_argument("-train_split", type=float, default=.85)
     parser.add_argument("-valid_split", type=float, default=.05)
-    parser.add_argument("-seed", type=int, default=2_183_154_691)
+
     parser.add_argument("-split_by_files", action="store_true", default=False,
                         help="This assumes three files named: train.txt, valid.txt, and test.txt")
     parser.add_argument("-train_file", type=str, default="train")
+
     return parser.parse_args()
 
 
@@ -170,9 +181,7 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(exist_ok=True, parents=True)
 
-    files = glob(args.log_dir + "/**/*_states.txt", recursive=True)
-    if len(files) == 0:
-        files = glob(args.log_dir + "/**/*.txt", recursive=True)
+    files = glob(args.log_dir + "/**/*.txt", recursive=True)
 
     if args.split_by_files:
         file_stems = {}

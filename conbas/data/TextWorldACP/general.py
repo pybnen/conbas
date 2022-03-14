@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 import textworld
 from textworld.envs.wrappers import Filter
-from typing import List
+from typing import List, Optional
 
 INTRO = "________ ________ __ __ ________ | \\| \\| \\ | \\| \\ \\$$$$$$$$| $$$$$$$$| $$ | $$ \\$$$$$$$$ | $$ | $$__ \\$$\\/ $$ | $$ | $$ | $$ \\ >$$ $$ | $$ | $$ | $$$$$ / $$$$\\ | $$ | $$ | $$_____ | $$ \\$$\\ | $$ | $$ | $$ \\| $$ | $$ | $$ \\$$ \\$$$$$$$$ \\$$ \\$$ \\$$ __ __ ______ _______ __ _______ | \\ _ | \\ / \\ | \\ | \\ | \\ | $$ / \\ | $$| $$$$$$\\| $$$$$$$\\| $$ | $$$$$$$\\ | $$/ $\\| $$| $$ | $$| $$__| $$| $$ | $$ | $$ | $$ $$$\\ $$| $$ | $$| $$ $$| $$ | $$ | $$ | $$ $$\\$$\\$$| $$ | $$| $$$$$$$\\| $$ | $$ | $$ | $$$$ \\$$$$| $$__/ $$| $$ | $$| $$_____ | $$__/ $$ | $$$ \\$$$ \\$$ $$| $$ | $$| $$ \\| $$ $$ \\$$ \\$$ \\$$$$$$ \\$$ \\$$ \\$$$$$$$$ \\$$$$$$$"
 
@@ -15,6 +15,7 @@ class State:
     last_command: str
     admissible_commands: List[str]
     done: bool
+    commands: Optional[List[str]] = None
 
 
 @dataclass
@@ -101,3 +102,8 @@ def get_environment(file, additional_infos=False):
     wrappers = [Filter]
     env = textworld.start(file, infos=env_infos, wrappers=wrappers)
     return env
+
+
+def state_to_json(s: State):
+    state_str = f"{s.description} {s.inventory}"
+    return [state_str, s.admissible_commands, s.commands]

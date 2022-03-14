@@ -3,13 +3,11 @@ import random
 from pathlib import Path
 from glob import glob
 from tqdm import tqdm
-from general import get_environment, extract_state, State, log_state
-import csv
-from typing import List, Dict, Set
+from general import get_environment, extract_state, State, state_to_json
+import json
+from typing import List, Set
 
-visited: List[State] = []
-state_to_idx: Dict[str, int] = {}
-all_commands: Set[str] = set()
+log_fp = None
 
 
 def backtrack(env, path):
@@ -33,18 +31,20 @@ def get_branching_cmds(admissible, command, branching_factor):
     return branching_cmds
 
 
-def walk_game(env, commands, branching_factor):
-    global csv_writer, all_commands
+def walk_game(env, walkthrough_commands, branching_factor):
+    global log_fp
 
+    env_commands: Set[str] = set()
+    states: List[State] = []
     state_cnt = 1
 
     ob, infos = env.reset()
     state, admissible_commands = extract_state((ob, infos, False))
-    log_state(csv_writer, state)
+    states.append(state)
 
     path = []
-    for command in commands:
-        all_commands.update(admissible_commands)
+    for command in walkthrough_commands:
+        env_commands.update(admissible_commands)
 
         if branching_factor > 0:
             branching_cmds = get_branching_cmds(admissible_commands, command, branching_factor)
@@ -54,8 +54,8 @@ def walk_game(env, commands, branching_factor):
                 ob, _, done, infos = env.step(branch_cmd)
                 state, ac = extract_state((ob, infos, done))
 
-                all_commands.update(ac)
-                log_state(csv_writer, state)
+                env_commands.update(ac)
+                states.append(state)
                 state_cnt += 1
 
                 path.pop()
@@ -65,8 +65,13 @@ def walk_game(env, commands, branching_factor):
         ob, _, done, infos = env.step(command)
         state, admissible_commands = extract_state((ob, infos, done))
 
-        log_state(csv_writer, state)
+        states.append(state)
         state_cnt += 1
+
+    for state in states:
+        state.commands = list(env_commands)
+        log_fp.write(json.dumps(state_to_json(state)) + "\n")
+
     return state_cnt
 
 
@@ -90,22 +95,19 @@ if __name__ == "__main__":
     logdir = Path(args.log_dir)
     logdir.mkdir(parents=True, exist_ok=True)
 
-    with open(logdir / args.out_filename, "w") as log_fp:
-        csv_writer = csv.writer(log_fp)
+    log_fp = open(logdir / args.out_filename, "w")
 
-        with tqdm(game_files) as pbar:
-            for game_file in pbar:
-                pbar.set_description(game_file)
+    with tqdm(game_files) as pbar:
+        for game_file in pbar:
+            pbar.set_description(game_file)
 
-                env = get_environment(game_file, True)
-                ob, infos = env.reset()
-                if "extra.walkthrough" not in infos or infos['extra.walkthrough'] is None:
-                    continue
-                commands = infos['extra.walkthrough']
-                state_cnt = walk_game(env, commands, args.branching_factor)
+            env = get_environment(game_file, True)
+            ob, infos = env.reset()
+            if "extra.walkthrough" not in infos or infos['extra.walkthrough'] is None:
+                continue
+            walkthrough_commands = infos['extra.walkthrough']
+            state_cnt = walk_game(env, walkthrough_commands, args.branching_factor)
 
-                pbar.set_postfix({"states": state_cnt})
-                log_fp.flush()
-
-    with open(logdir / "cmds.txt", "w") as cmd_fp:
-        cmd_fp.write("\n".join(all_commands))
+            pbar.set_postfix({"states": state_cnt})
+            log_fp.flush()
+    log_fp.close()
