@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 #  from data import SOS_TOKEN_ID, EOS_TOKEN_ID
 
 EMBEDDING_SIZE = 64
@@ -16,12 +17,13 @@ class Seq2Seq(nn.Module):
         self.seq_decoder = SeqDecoder(device)
 
     def forward(self, state, state_mask, cmds, cmds_mask):
-        # [n_cmds, n_batch, hidden * 2]
-        state_embed = self.state_embedding(state, state_mask, cmds, cmds_mask)
+        # n_batch, n_cmds, hidden * 2
+        state_embed, lengths = self.state_embedding(state, state_mask, cmds, cmds_mask)
 
-        encoder_outputs, hidden_states = self.encoder(state_embed)
+        # n_batch, n_cmds, hidden * 2
+        encoder_outputs, hidden_states = self.encoder(state_embed, lengths)
 
-        outputs, idxs = self.seq_decoder(encoder_outputs, hidden_states)
+        outputs, idxs = self.seq_decoder(encoder_outputs, hidden_states, lengths)
 
         return outputs, idxs
 
@@ -35,9 +37,17 @@ class Encoder(nn.Module):
                            num_layers=1,
                            bidirectional=False)
 
-    def forward(self, input: torch.Tensor):
-        output, (hidden, cell) = self.rnn(input)
-        return output, (hidden, cell)
+    def forward(self, input: torch.Tensor, lengths: torch.Tensor):
+        # n_seq, n_batch, hidden
+        input = input.permute((1, 0, 2))
+        packed_input = pack_padded_sequence(input, lengths, enforce_sorted=False)
+
+        output, (hidden, cell) = self.rnn(packed_input)
+        output_padded, _ = pad_packed_sequence(output)
+
+        # n_batch, n_seq, hidden
+        output_padded = output_padded.permute((1, 0, 2))
+        return output_padded, (hidden, cell)
 
 
 class SeqDecoder(nn.Module):
@@ -51,41 +61,59 @@ class SeqDecoder(nn.Module):
 
         self.device = device
 
-    def forward(self, encoder_outputs, hidden_state):
-        assert torch.all(encoder_outputs[-1] == hidden_state[0])
-        seq_len, n_batch, n_hidden = encoder_outputs.size()
+    def forward(self, encoder_outputs, hidden_state, lengths):
+        n_batch, seq_len, n_hidden = encoder_outputs.size()
 
         # SOS
-        input = torch.zeros_like(encoder_outputs[0])  # torch.zeros(n_batch, hidden_size).to(self.device)
+        decoder_input = torch.zeros_like(encoder_outputs[:, 0])
+
+        done = torch.zeros(n_batch).bool().to(self.device)
+        lengths = lengths.to(self.device)
 
         outputs = []
-        idxs = []
+        indices = []
+        batch_idx = torch.arange(n_batch)
 
-        max_length = seq_len
-        # while output != "EOS":
-        #  while pointer_idx != eos_idx:
-        for Ö in range(max_length):
-            output_att, hidden_state = self.decoder(input, hidden_state, encoder_outputs)
-            dist = Categorical(logits=output_att)
+        # TODO make smarter
+        mask = torch.zeros(n_batch, seq_len).to(self.device)
+        for i, length in enumerate(lengths):
+            mask[i, :length] = 1
+        mask = mask.bool()
+        already_sampled = torch.zeros(n_batch, seq_len).to(self.device).bool()
+
+        cur_len = 0
+        while not torch.all(done):
+            # n_batch, n_cmds
+            output_att, hidden_state = self.decoder(decoder_input, hidden_state, encoder_outputs)
+            output_att[~mask] = float("-inf")
+
+            masked_output_att = torch.clone(output_att.detach())
+            masked_output_att[already_sampled] = float("-inf")
+
+            dist = Categorical(logits=masked_output_att)
             input_idx = dist.sample()
+            input_idx = input_idx * (1 - done.long())
 
-            index_tensor = input_idx.unsqueeze(0).unsqueeze(-1).expand(1, n_batch, n_hidden)
-            input = encoder_outputs.gather(dim=0, index=index_tensor).squeeze(0)
-            # use gather instead, like:
-            # decoder_input = torch.gather(encoder_outputs, dim=1, index=index_tensor).squeeze(1)1
-            input2 = []
-            for i, idx in enumerate(input_idx):
-                input2.append(encoder_outputs[idx, i, :])
-            input2 = torch.stack(input2).detach()
+            already_sampled[batch_idx, input_idx] = True
+            already_sampled[batch_idx, 0] = False
 
-            assert(torch.all(input2 == input))
+            decoder_input = encoder_outputs[batch_idx, input_idx]
+            # would also work:
+            # index_tensor = input_idx.unsqueeze(1).unsqueeze(-1).expand(n_batch, 1, n_hidden)
+            # decoder_input = encoder_outputs.gather(dim=1, index=index_tensor).squeeze(1)
+            decoder_input = decoder_input.detach()
 
-            idxs.append(input_idx)
+            indices.append(input_idx)
             outputs.append(output_att)
 
-        outputs = torch.stack(outputs)
-        idxs = torch.stack(idxs)
-        return outputs, idxs
+            cur_len += 1
+            max_seq_len = cur_len >= lengths
+            # EOF == idx 0
+            done = torch.logical_or(done, torch.logical_or(max_seq_len, input_idx == 0))
+
+        outputs = torch.stack(outputs, dim=1)
+        indices = torch.stack(indices, dim=1)
+        return outputs, indices
 
 
 class Decoder(nn.Module):
@@ -119,11 +147,11 @@ class Attention(nn.Module):
 
     def forward(self, key, value):
         # attention
-        out1 = self.W1(key).unsqueeze(0)
+        out1 = self.W1(key).unsqueeze(1)
 
         out2 = self.W2(value)
         # works thanks to broadcasting
-        output = self.v(torch.tanh(out1 + out2)).squeeze(-1).T
+        output = self.v(torch.tanh(out1 + out2)).squeeze(-1)
 
         return output
 
@@ -137,24 +165,40 @@ class StateEmbedding(nn.Module):
                            num_layers=1,
                            bidirectional=False)
 
-    def representation(self, input, input_mask):
+    def state_representation(self, input, input_mask):
+        # n_batch, n_seq, hidden
         embedded_input = self.embedding(input)
+        # n_seq, n_batch, hidden
+        embedded_input = embedded_input.permute((1, 0, 2))
+
         output, (h, c) = self.rnn(embedded_input)
 
         # mean pooling, but take padding into account
-        repr = output.sum(dim=0) / input_mask.sum(dim=0).unsqueeze(-1)
+        input_mask = input_mask.permute((1, 0)).unsqueeze(-1)
+        masked_output = output * input_mask
+        repr = masked_output.sum(dim=0) / input_mask.sum(dim=0)
+
+        # n_batch, hidden
         return repr
 
     def forward(self, state, state_mask, cmds, cmds_mask):
-        state_repr = self.representation(state, state_mask)  # n_batch, hidden
-        cmds_repr = self.representation(cmds, cmds_mask)     # n_cmds, hidden
+        # n_batch, hidden
+        state_repr = self.state_representation(state, state_mask)
 
-        n_batch = state_repr.size(0)
-        n_cmds = cmds_repr.size(0)
+        outputs = []
+        output_lengths = []
+        for cmd, cmd_mak, s_rep in zip(cmds, cmds_mask, state_repr):
+            # n_cmds[i], hidden
+            cmd_rep = self.state_representation(cmd, cmd_mak)
 
-        state_repr = state_repr.unsqueeze(0).repeat_interleave(n_cmds, 0)  # n_cmds, n_batch, hidden
-        cmds_repr = cmds_repr.unsqueeze(1).repeat_interleave(n_batch, 1)  # n_cmds, n_batch, hidden
+            n_cmds, hidden = cmd_rep.size()
+            output_lengths.append(n_cmds)
 
-        output = torch.cat([state_repr, cmds_repr], dim=-1)  # n_cmds, n_batch, hidden * 2
+            # n_cmds[i], hidden
+            s_rep_expand = s_rep.unsqueeze(0).expand(n_cmds, hidden)
+            outputs.append(torch.cat([s_rep_expand, cmd_rep], dim=-1))
 
-        return output
+        # n_batch, n_cmds, hidden * 2
+        outputs_padded = pad_sequence(outputs, batch_first=True)
+        output_lengths = torch.tensor(output_lengths)
+        return outputs_padded, output_lengths

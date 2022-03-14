@@ -1,4 +1,5 @@
-from typing import List
+from typing import Any, List
+from matplotlib.font_manager import json_load
 from torch.utils.data.dataset import Dataset
 import numpy as np
 from torch.utils.data.dataloader import DataLoader
@@ -7,9 +8,9 @@ import string
 from nltk.corpus import stopwords
 import torch
 from tqdm import tqdm
-import csv
 import random
 import numpy as np
+import json
 
 PAD_TOKEN = "[PAD]"
 SOS_TOKEN = "[SOS]"
@@ -101,65 +102,71 @@ def preprocess_line(line, tokenizer, vocab: Vocabulary, remove_stopwords=True):
     return [vocab.word_2_id(w) for w in tokens]
 
 
-def parse_row(row: List[str], commands: List[str], tokenizer, vocab: Vocabulary):
-    state_line, admissible_cmds = row[0], row[1:]
-    state = preprocess_line(state_line, tokenizer, vocab)
+def process_state(state_arr: List[Any], tokenizer, vocab: Vocabulary):
+    ob, admissible_cmds, cmds = state_arr
 
-    admissible_cmds = [cmd.strip() for cmd in admissible_cmds]
-    filtered_cmds = [cmd for cmd in admissible_cmds
-                     if cmd not in ["look", "inventory"]]
+    ob = preprocess_line(ob, tokenizer, vocab)
 
-    # will throw exception of admissible commands not found -> good
-    admissible_idx = [commands.index(cmd) for cmd in filtered_cmds]
-    return state, admissible_idx
+    # add EOS to commands
+    cmds = [EOS_TOKEN] + [c.strip() for c in cmds]
+
+    admissible_cmds = [c.strip() for c in admissible_cmds]
+    filtered_cmds = [c for c in admissible_cmds if c not in ["look", "inventory"]]
+    admissible_indices = [cmds.index(c) for c in filtered_cmds]
+
+    cmds = [preprocess_line(c, tokenizer, vocab) for c in cmds]
+    return ob, admissible_indices, cmds
 
 
 class GameStateDataset(Dataset):
 
-    def __init__(self, state_file, commands_file, tokenizer, vocab: Vocabulary):
+    def __init__(self, state_file, tokenizer, vocab: Vocabulary):
         super().__init__()
-        self.states = []
+        self.obs = []
         self.admissible_commands = []
+        self.commands_list = []
         self.vocab = vocab
-
-        with open(commands_file, "r") as fp:
-            self.commands_arr = [EOS_TOKEN] + [line.strip() for line in fp.readlines()]
-            self.commands = [preprocess_line(cmd, tokenizer, self.vocab) for cmd in self.commands_arr]
-            max_len = max([len(cmd) for cmd in self.commands])
-            padded_cmds, cmds_mask = pad_sequences(self.commands, max_len, 'int')
-            self.commands = torch.tensor(padded_cmds).T
-            self.commands_mask = torch.tensor(cmds_mask).T
 
         with open(state_file, "r") as fp:
             lines = fp.readlines()
-            reader = csv.reader(lines)
-            with tqdm(reader) as pbar:
-                for row in pbar:
-                    state, admissible_cmds = parse_row(row, self.commands_arr, tokenizer, self.vocab)
-                    self.states.append(state)
+            with tqdm(lines) as pbar:
+                for line in pbar:
+                    state_arr = json.loads(line)
+                    ob, admissible_cmds, cmds = process_state(state_arr, tokenizer, self.vocab)
+                    self.obs.append(ob)
                     self.admissible_commands.append(admissible_cmds)
+                    self.commands_list.append(cmds)
 
     def __getitem__(self, index):
-        return self.states[index], self.admissible_commands[index]
+        return self.obs[index], self.admissible_commands[index], self.commands_list[index]
 
     def __len__(self):
-        return len(self.states)
+        return len(self.obs)
 
 
 def create_batch(data):
-    state_batch, admissible_cmds_batch = list(zip(*data))
+    state_batch, admissible_cmds_batch, command_list_batch = list(zip(*data))
 
     # TODO maybe pack
     max_len = max([len(s) for s in state_batch])
-    padded_state_batch, state_mask_batch = pad_sequences(state_batch, max_len, 'int')
+    state_padded, state_mask = pad_sequences(state_batch, max_len, 'int')
 
     max_len = max([len(c) for c in admissible_cmds_batch])
-    padded_admissible_cmds, admissible_cmds_mask_batch = pad_sequences(admissible_cmds_batch, max_len, 'int')
+    admissible_cmds_padded, admissible_cmds_mask = pad_sequences(admissible_cmds_batch, max_len, 'int')
 
-    return torch.tensor(padded_state_batch).T, \
-        torch.tensor(state_mask_batch).T, \
-        torch.tensor(padded_admissible_cmds).T, \
-        torch.tensor(admissible_cmds_mask_batch).T
+    max_len = max([len(c) for command_list in command_list_batch for c in command_list])
+    commands = []
+    commands_mask = []
+    for command_list in command_list_batch:
+        command_list_padded, command_list_mask = pad_sequences(command_list, max_len, 'int')
+        command_list_padded, command_list_mask = torch.tensor(command_list_padded), torch.tensor(command_list_mask)
+
+        commands.append(command_list_padded)
+        commands_mask.append(command_list_mask)
+
+    return torch.tensor(state_padded), torch.tensor(state_mask), \
+        torch.tensor(admissible_cmds_padded), torch.tensor(admissible_cmds_mask), \
+        commands, commands_mask
 
 
 def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
@@ -173,12 +180,12 @@ def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
     g = torch.Generator()
     g.manual_seed(seed)
 
-    ds_train = GameStateDataset(directory + "/train.txt", directory + "/commands.txt", tokenizer, vocab)
+    ds_train = GameStateDataset(directory + "/train.txt", tokenizer, vocab)
     dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, num_workers=num_workers,
                           collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
-    ds_valid = GameStateDataset(directory + "/valid.txt", directory + "/commands.txt", tokenizer, vocab)
+    ds_valid = GameStateDataset(directory + "/valid.txt", tokenizer, vocab)
     dl_valid = DataLoader(ds_valid, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                           collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
-    return dl_train, dl_valid, vocab, ds_train.commands_arr
+    return dl_train, dl_valid, vocab
