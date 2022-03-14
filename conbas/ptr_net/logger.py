@@ -11,39 +11,35 @@ class Logger(object):
 
         # self.writer = SummaryWriter()
         self.reset()
-        # self.batch_size = []
-        # self.loss = []
-        # self.batch_loss = 0.0
 
-        self.recent_batch_losses = deque(maxlen=maxlen)
-        self.recent_batch_accuracies = deque(maxlen=maxlen)
+        self.recent_epoch_losses = deque(maxlen=maxlen)
+        self.recent_epoch_accuracies = deque(maxlen=maxlen)
 
-    # TODO its not really batch but epoch :(
     def reset(self):
         self.batch_sizes = []
-        
+
         self.losses = []
-        self.batch_loss = 0.
-        self.mv_avg_batch_loss = 0.
+        self.epoch_loss = 0.
+        self.mv_avg_epoch_loss = 0.
 
         self.accuracies = []
-        self.batch_accuracy = 0.
-        self.mv_avg_batch_accuracy = 0.
+        self.epoch_accuracy = 0.
+        self.mv_avg_epoch_accuracy = 0.
 
-    def end_batch(self):
+    def end_epoch(self):
         np_batch_size = np.array(self.batch_sizes)
-        self.batch_loss = np.sum(np.array(self.losses) * np_batch_size) / np_batch_size.sum()
-        self.batch_accuracy = np.sum(np.array(self.accuracies) * np_batch_size) / np_batch_size.sum()
+        self.epoch_loss = np.sum(np.array(self.losses) * np_batch_size) / np_batch_size.sum()
+        self.epoch_accuracy = np.sum(np.array(self.accuracies) * np_batch_size) / np_batch_size.sum()
 
-        self.recent_batch_losses.append(self.batch_loss)
-        self.recent_batch_accuracies.append(self.batch_accuracy)
+        self.recent_epoch_losses.append(self.epoch_loss)
+        self.recent_epoch_accuracies.append(self.epoch_accuracy)
 
-        self.mv_avg_batch_loss = np.mean(self.recent_batch_losses)
-        self.mv_avg_batch_accuracy = np.mean(self.recent_batch_accuracies)
+        self.mv_avg_epoch_loss = np.mean(self.recent_epoch_losses)
+        self.mv_avg_epoch_accuracy = np.mean(self.recent_epoch_accuracies)
 
     def to_str(self):
-        s = f"loss {self.batch_loss:.4f} / {self.mv_avg_batch_loss:.4f} "
-        s += f"accuracy {self.batch_accuracy:.4f} / {self.mv_avg_batch_accuracy:.4f}"
+        s = f"loss {self.epoch_loss:.4f}/{self.mv_avg_epoch_loss:.4f}"
+        s += f", accuracy {self.epoch_accuracy:.4f} / {self.mv_avg_epoch_accuracy:.4f}"
         return s
 
     def add_step(self, loss: float, accuracy: float, batch_size: int):
