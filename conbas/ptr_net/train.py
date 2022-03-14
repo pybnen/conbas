@@ -9,6 +9,8 @@ from tqdm import tqdm
 import sys
 import random
 import numpy as np
+from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
 
 from data import get_dataloader
 from model import Seq2Seq
@@ -94,8 +96,9 @@ def parse_args():
     parser = ArgumentParser(description="Train pointer network")
     parser.add_argument("-bs", "--batch_size", type=int, default=12)
     parser.add_argument("-nw", "--num_workers", type=int, default=0)
+    parser.add_argument("--logdir", help="log directory")
+    parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
     parser.add_argument("dataset_dir", help="directory to dataset")
-    parser.add_argument("-seed", type=int, default=2_183_154_691)
 
     return parser.parse_args()
 
@@ -107,13 +110,23 @@ def run():
     # TODO make all variable configs
     lr = 1e-3
     n_epochs = 1_000
-    num_workers = args.num_workers
+
+    # logger
+    logdir = Path(args.logdir)
+    if logdir.exists():
+        print(f"Logdir already exists: '{args.logdir}'")
+        return
+    logdir.mkdir(parents=True)
+
+    writer = SummaryWriter(log_dir=logdir)
+    logger = Logger(writer)
+    logger_val = Logger(writer)
 
     # get dataloader
     print("Load dataset")
     dl_train, dl_valid, vocab = \
         get_dataloader(args.dataset_dir, args.batch_size,
-                       tokenizer=word_tokenize, num_workers=num_workers, seed=args.seed)
+                       tokenizer=word_tokenize, num_workers=args.num_workers, seed=args.seed)
     vocab_size = len(vocab)
 
     # get device
@@ -123,16 +136,13 @@ def run():
     seq2seq = Seq2Seq(device, vocab_size, vocab.word_2_id("[PAD]"))
     seq2seq = seq2seq.to(device)
 
-    # logger
-    logger = Logger()
-    logger_val = Logger()
-
     # get optimizer
     # TODO params of all stuffs
     optimizer = optim.Adam(seq2seq.parameters(), lr=lr)
 
     # train
     print("\nStart training")
+    train_step = 0
     for epoch in range(n_epochs):
         seq2seq.train()
 
@@ -176,6 +186,8 @@ def run():
 
                 batch_size = states.size(0)
                 logger.add_step(loss.item(), accuracy.item(), batch_size)
+
+                train_step += batch_size
         logger.end_epoch()
 
         sys.stdout.flush()
@@ -183,6 +195,9 @@ def run():
 
         print("  train     :", logger.to_str())
         print("  validation:", logger_val.to_str())
+        logger.log("train", train_step)
+        logger_val.log("valid", train_step)
+
     print('Finished Training')
 
 

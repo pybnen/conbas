@@ -1,15 +1,14 @@
 from dataclasses import dataclass
-from torch.utils.tensorboard import SummaryWriter
 from collections import deque
 import numpy as np
 
 
 class Logger(object):
 
-    def __init__(self):
+    def __init__(self, writer):
         maxlen = 100
 
-        # self.writer = SummaryWriter()
+        self.writer = writer
         self.reset()
 
         self.recent_epoch_losses = deque(maxlen=maxlen)
@@ -41,6 +40,13 @@ class Logger(object):
         s = f"loss {self.epoch_loss:.4f}/{self.mv_avg_epoch_loss:.4f}"
         s += f", accuracy {self.epoch_accuracy:.4f} / {self.mv_avg_epoch_accuracy:.4f}"
         return s
+
+    def log(self, label, step):
+        self.writer.add_scalar(f"{label}/avg_loss", self.mv_avg_epoch_loss, step)
+        self.writer.add_scalar(f"{label}/epoch_loss", self.epoch_loss, step)
+
+        self.writer.add_scalar(f"{label}/avg_accuracy", self.mv_avg_epoch_accuracy, step)
+        self.writer.add_scalar(f"{label}/epoch_accuracy", self.epoch_accuracy, step)
 
     def add_step(self, loss: float, accuracy: float, batch_size: int):
         self.losses.append(loss)
