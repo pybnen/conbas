@@ -324,4 +324,8 @@ FTWP/starting_kit/*
 FTWP/starting_kit/sample_submission_lstm-dqn/Dockerfile
 FTWP/starting_kit/sample_submission_lstm-dqn/Dockerimage
 
+runs/
+
+generate_plots/
+
 
