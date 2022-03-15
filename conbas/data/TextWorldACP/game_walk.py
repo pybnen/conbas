@@ -77,12 +77,12 @@ def walk_game(env, walkthrough_commands, branching_factor):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generates TextWorld ACP dataset.")
-    parser.add_argument("game_dir", type=str)
-    parser.add_argument("-log_dir", type=str, required=True)
-    parser.add_argument("-out_filename", type=str, default="states.txt")
-    parser.add_argument("-file_ending", type=str, default="ulx")
-    parser.add_argument("-branching_factor", type=int, default=3)
-    parser.add_argument("-seed", type=int, default=2_183_154_691)
+    parser.add_argument("gamedir", type=str)
+    parser.add_argument("--logdir", type=str, required=True)
+    parser.add_argument("--out_filename", type=str, default="states.txt")
+    parser.add_argument("--file_ending", type=str, default="ulx")
+    parser.add_argument("-bf", "--branching_factor", type=int, default=3)
+    parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
     return parser.parse_args()
 
 
@@ -91,8 +91,8 @@ if __name__ == "__main__":
 
     random.seed(args.seed)
 
-    game_files = sorted(glob(args.game_dir + f"**/*.{args.file_ending}", recursive=True))
-    logdir = Path(args.log_dir)
+    game_files = sorted(glob(args.gamedir + f"**/*.{args.file_ending}", recursive=True))
+    logdir = Path(args.logdir)
     logdir.mkdir(parents=True, exist_ok=True)
 
     log_fp = open(logdir / args.out_filename, "w")

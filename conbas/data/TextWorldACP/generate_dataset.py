@@ -122,10 +122,16 @@ def split_rows(rows, split, rng):
         (rows_test, stats_test, cmds_test)
 
 
-def split_by_files(rows, from_file):
+def split_by_files(rows, from_file, split, rng):
     dataset_per_file = {}
     for file, stats in from_file.items():
         rows_from_file = [row for row in rows if row[0] in stats]
+        if split < 1.0:
+            n_rows = len(rows_from_file)
+            split_size = int(n_rows * split)
+            split_indices = rng.choice(np.arange(n_rows), size=split_size, replace=False)
+            rows_from_file = [rows_from_file[i] for i in split_indices]
+
         dataset_per_file[file] = create_dataset(rows_from_file)
     return dataset_per_file
 
@@ -159,16 +165,20 @@ def write_dataset(out_dir, rows, name):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generates TextWorld ACP dataset.")
-    parser.add_argument("log_dir", type=str)
-    parser.add_argument("-out_dir", type=str, default="./data/TextWorldACP")
-    parser.add_argument("-seed", type=int, default=2_183_154_691)
+    parser.add_argument("logdir", type=str)
+    parser.add_argument("--outdir", type=str, default="./data/TextWorldACP")
+    parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
 
-    parser.add_argument("-train_split", type=float, default=.85)
-    parser.add_argument("-valid_split", type=float, default=.05)
+    # split train/valid/test by percentage
+    parser.add_argument("--train_split", type=float, default=.85)
+    parser.add_argument("--valid_split", type=float, default=.05)
 
-    parser.add_argument("-split_by_files", action="store_true", default=False,
+    # options for split by file
+    parser.add_argument("--split_by_files", action="store_true", default=False,
                         help="This assumes three files named: train.txt, valid.txt, and test.txt")
-    parser.add_argument("-train_file", type=str, default="train")
+    parser.add_argument("--split", type=float, default=1.0, help="How much samples to take from each files. "
+                        "Set below 1.0 to create smaller datasets.")
+    parser.add_argument("--train_file", type=str, default="train")
 
     return parser.parse_args()
 
@@ -178,10 +188,10 @@ def main():
 
     rng = set_rng_seed(args.seed)
 
-    out_dir = Path(args.out_dir)
+    out_dir = Path(args.outdir)
     out_dir.mkdir(exist_ok=True, parents=True)
 
-    files = glob(args.log_dir + "/**/*.txt", recursive=True)
+    files = glob(args.logdir + "/**/*.txt", recursive=True)
 
     if args.split_by_files:
         file_stems = {}
@@ -209,7 +219,7 @@ def main():
         stats_str += "\n" + stats_to_str(stats_valid, "Valid", not_in_train=cmds_valid.difference(cmds_train))
         stats_str += "\n" + stats_to_str(stats_test, "Test", not_in_train=cmds_test.difference(cmds_train))
     else:
-        datasets = split_by_files(rows, from_file)
+        datasets = split_by_files(rows, from_file, args.split, rng)
 
         if args.train_file in datasets:
             rows_train, stats_train, cmds_train = datasets[args.train_file]
