@@ -1,4 +1,5 @@
 logdir: "./experiments/ptr/test_config"
+log_example_interval: 10
 
 training:
   datadir: "./data/TextWorldACP/test"

@@ -12,6 +12,7 @@ import numpy as np
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 import yaml
+from functools import reduce
 
 from data import get_dataloader
 from model import Seq2Seq
@@ -27,7 +28,7 @@ torch.backends.cudnn.benchmark = False
 
 
 @torch.no_grad()
-def evaluate(seq2seq, dl_valid, device, epoch, logger):
+def evaluate(seq2seq, dl_valid, device, logger):
     seq2seq.eval()
 
     logger.reset()
@@ -68,21 +69,48 @@ def evaluate(seq2seq, dl_valid, device, epoch, logger):
 
     logger.end_epoch()
 
-    if epoch % 10 == 0:
-        ob = dl_valid.dataset.vocab.to_sentence(states.cpu()[0, states_masks[0, :].bool()].tolist())
-        commands_arr = [dl_valid.dataset.vocab.to_sentence(
-            c[cm.bool()].tolist()) for c, cm in zip(commands[0], commands_mask[0])]
 
-        # commands_arr = commands_arr + ["OOI"] * (1 + max(idxs.cpu()[0, :].tolist()) - len(commands_arr))
+@torch.no_grad()
+def get_example(seq2seq, dl, device):
+    # get random batch from dataloader
+    dl_iter = iter(dl)
+    dl_len = len(dl)
+    data = next(dl_iter)
+    for _ in range(np.random.randint(dl_len)):
+        data = next(dl_iter)
 
-        label = sorted([commands_arr[i] for i in admissible_cmds.cpu()[0, :].tolist() if i != 0])
-        prediction = sorted([commands_arr[i] for i in indices.cpu()[0, :].tolist() if i != 0])
-        print("\n\nObservation", ob)
-        print("------------------------------\n")
-        print("Label:", label)
-        print("------------------------------\n")
-        print("Pred :", prediction)
-        print("------------------------------\n")
+    states, states_masks = data[0].to(device), data[1].to(device)
+    admissible_cmds = data[2].to(device)
+
+    commands = [c.to(device) for c in data[4]]
+    commands_mask = [c.to(device) for c in data[5]]
+
+    _, indices = seq2seq(states, states_masks, commands, commands_mask)
+
+    batch_size = states.size(0)
+    sample_idx = np.random.randint(batch_size)
+
+    ob = dl.dataset.vocab.to_sentence(states.cpu()[sample_idx, states_masks[sample_idx, :].bool()].tolist())
+    commands_arr = [dl.dataset.vocab.to_sentence(c[cm.bool()].tolist())
+                    for c, cm in zip(commands[sample_idx], commands_mask[sample_idx])]
+
+    labels = [commands_arr[i] for i in admissible_cmds.cpu()[sample_idx, :].tolist() if i != 0]
+    predictions = [commands_arr[i] for i in indices.cpu()[sample_idx, :].tolist() if i != 0]
+
+    example_str = f"{ob}\n"
+    max_label_len = reduce(lambda a, b: max(a, len(b)), labels, 0) + 1
+
+    max_len = max(len(labels), len(predictions))
+    labels += ["-"] * (max_len - len(labels))
+    predictions += ["-"] * (max_len - len(predictions))
+
+    for label, prediction in zip(labels, predictions):
+        tab = ' ' * (max_label_len - len(label))
+        if label == prediction:
+            example_str += f"{label}{tab}<-- *correct*\n"
+        else:
+            example_str += f"{label}{tab}{prediction}\n"
+    return example_str
 
 
 def set_rng_seed(seed: int):
@@ -210,7 +238,7 @@ def run():
         sys.stdout.flush()
 
         # validate
-        evaluate(seq2seq, dl_valid, device, epoch, logger_val)
+        evaluate(seq2seq, dl_valid, device, logger_val)
         current_val_loss = logger_val.epoch_loss
         mv_avg_val_loss = logger_val.mv_avg_epoch_loss
 
@@ -228,6 +256,12 @@ def run():
             new_best = True
             # save network
             torch.save(seq2seq.state_dict(), logdir / "state_dict.pth")
+
+        # log examples
+        if epoch % config['log_example_interval'] == 0:
+            example_str = get_example(seq2seq, dl_valid, device)
+            with open(logdir / "examplex.txt", "a") as fp:
+                fp.write(f"Epoch {epoch}\n{example_str}\n")
 
         # log statistics
         print("  train     :", logger.to_str())
