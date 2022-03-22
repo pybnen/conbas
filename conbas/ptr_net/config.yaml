@@ -1,0 +1,12 @@
+logdir: "./experiments/ptr/test_config"
+
+training:
+  datadir: "./data/TextWorldACP/test"
+  batch_size: 128
+  num_workers: 0
+  epochs: 1000
+  lr: 0.001
+  
+model:
+  embedding_size: 64
+  hidden_size: 64

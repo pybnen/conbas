@@ -1,20 +1,18 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.distributions import Categorical
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 #  from data import SOS_TOKEN_ID, EOS_TOKEN_ID
 
-EMBEDDING_SIZE = 64
-HIDDEN_SIZE = 64
-
 
 class Seq2Seq(nn.Module):
-    def __init__(self, device, vocab_size, padding_idx):
+    def __init__(self, vocab_size, embedding_size, hidden_size, device, padding_idx):
         super().__init__()
-        self.state_embedding = StateEmbedding(vocab_size, padding_idx)
-        self.encoder = Encoder()
-        self.seq_decoder = SeqDecoder(device)
+
+        self.state_embedding = StateEmbedding(vocab_size, embedding_size, hidden_size, padding_idx)
+        state_embedding_size = hidden_size * 2
+        self.encoder = Encoder(state_embedding_size)
+        self.seq_decoder = SeqDecoder(state_embedding_size, device)
 
     def forward(self, state, state_mask, cmds, cmds_mask):
         # n_batch, n_cmds, hidden * 2
@@ -29,11 +27,11 @@ class Seq2Seq(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, hidden_size):
         super().__init__()
 
-        self.rnn = nn.LSTM(input_size=HIDDEN_SIZE * 2,
-                           hidden_size=HIDDEN_SIZE * 2,
+        self.rnn = nn.LSTM(input_size=hidden_size,
+                           hidden_size=hidden_size,
                            num_layers=1,
                            bidirectional=False)
 
@@ -51,13 +49,10 @@ class Encoder(nn.Module):
 
 
 class SeqDecoder(nn.Module):
-    def __init__(self, device):
+    def __init__(self, hidden_size, device):
         super().__init__()
 
-        self.decoder = Decoder()
-        self.v = nn.Linear(HIDDEN_SIZE * 2, 1, bias=False)
-        self.W1 = nn.Linear(HIDDEN_SIZE * 2, HIDDEN_SIZE * 2, bias=False)
-        self.W2 = nn.Linear(HIDDEN_SIZE * 2, HIDDEN_SIZE * 2, bias=False)
+        self.decoder = Decoder(hidden_size)
 
         self.device = device
 
@@ -118,14 +113,14 @@ class SeqDecoder(nn.Module):
 
 class Decoder(nn.Module):
 
-    def __init__(self):
+    def __init__(self, hidden_size):
         super().__init__()
 
-        self.rnn = nn.LSTM(input_size=HIDDEN_SIZE * 2,
-                           hidden_size=HIDDEN_SIZE * 2,
+        self.rnn = nn.LSTM(input_size=hidden_size,
+                           hidden_size=hidden_size,
                            num_layers=1,
                            bidirectional=False)
-        self.att = Attention()
+        self.att = Attention(hidden_size)
 
     def forward(self, input: torch.Tensor, hidden_state: torch.Tensor, encoder_outputs: torch.Tensor):
         hidden, cell = hidden_state
@@ -139,11 +134,11 @@ class Decoder(nn.Module):
 
 
 class Attention(nn.Module):
-    def __init__(self):
+    def __init__(self, hidden_size):
         super().__init__()
-        self.W1 = nn.Linear(HIDDEN_SIZE * 2, HIDDEN_SIZE * 2, bias=False)
-        self.W2 = nn.Linear(HIDDEN_SIZE * 2, HIDDEN_SIZE * 2, bias=False)
-        self.v = nn.Linear(HIDDEN_SIZE * 2, 1, bias=False)
+        self.W1 = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.W2 = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.v = nn.Linear(hidden_size, 1, bias=False)
 
     def forward(self, key, value):
         # attention
@@ -157,11 +152,11 @@ class Attention(nn.Module):
 
 
 class StateEmbedding(nn.Module):
-    def __init__(self, vocab_size, padding_idx):
+    def __init__(self, vocab_size, embedding_size, hidden_size, padding_idx):
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, EMBEDDING_SIZE, padding_idx=padding_idx)
-        self.rnn = nn.LSTM(input_size=EMBEDDING_SIZE,
-                           hidden_size=HIDDEN_SIZE,
+        self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx=padding_idx)
+        self.rnn = nn.LSTM(input_size=embedding_size,
+                           hidden_size=hidden_size,
                            num_layers=1,
                            bidirectional=False)
 

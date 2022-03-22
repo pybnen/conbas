@@ -11,6 +11,7 @@ import random
 import numpy as np
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
+import yaml
 
 from data import get_dataloader
 from model import Seq2Seq
@@ -94,27 +95,32 @@ def set_rng_seed(seed: int):
 
 def parse_args():
     parser = ArgumentParser(description="Train pointer network")
-    parser.add_argument("-bs", "--batch_size", type=int, default=12)
-    parser.add_argument("-nw", "--num_workers", type=int, default=0)
-    parser.add_argument("--logdir", help="log directory")
+    parser.add_argument("--config", type=str, required=True)
     parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
-    parser.add_argument("dataset_dir", help="directory to dataset")
+    # parser.add_argument("-bs", "--batch_size", type=int, default=12)
+    # parser.add_argument("-nw", "--num_workers", type=int, default=0)
+    # parser.add_argument("--logdir", help="log directory", required=True)
+    # parser.add_argument("dataset_dir", help="directory to dataset")
 
     return parser.parse_args()
 
 
 def run():
     args = parse_args()
+
+    with open(args.config, "r") as fp:
+        config = yaml.load(fp, Loader=yaml.SafeLoader)
+    config['args'] = vars(args)
+
     _ = set_rng_seed(args.seed)
 
-    # TODO make all variable configs
-    lr = 1e-3
-    n_epochs = 1_000
+    lr = config['training']['lr']
+    n_epochs = config['training']['epochs']
 
     # logger
-    logdir = Path(args.logdir)
+    logdir = Path(config['logdir'])
     if logdir.exists():
-        print(f"Logdir already exists: '{args.logdir}'")
+        print(f"Logdir already exists: '{config['logdir']}'")
         return
     logdir.mkdir(parents=True)
 
@@ -125,15 +131,20 @@ def run():
     # get dataloader
     print("Load dataset")
     dl_train, dl_valid, vocab = \
-        get_dataloader(args.dataset_dir, args.batch_size,
-                       tokenizer=word_tokenize, num_workers=args.num_workers, seed=args.seed)
+        get_dataloader(config['training']['datadir'],
+                       config['training']['batch_size'],
+                       tokenizer=word_tokenize,
+                       num_workers=config['training']['num_workers'],
+                       seed=args.seed)
     vocab_size = len(vocab)
 
     # get device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # get model
-    seq2seq = Seq2Seq(device, vocab_size, vocab.word_2_id("[PAD]"))
+    embedding_size = config['model']['embedding_size']
+    hidden_size = config['model']['hidden_size']
+    seq2seq = Seq2Seq(vocab_size, embedding_size, hidden_size, device, vocab.word_2_id("[PAD]"))
     seq2seq = seq2seq.to(device)
 
     # get optimizer
