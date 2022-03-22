@@ -2,10 +2,14 @@ logdir: "./experiments/ptr/test_config"
 
 training:
   datadir: "./data/TextWorldACP/test"
-  batch_size: 2
+  batch_size: 128
   num_workers: 0
   epochs: 1000
   lr: 0.001
+  scheduler:
+    factor: 0.5
+    patience: 10
+    target: 'current_loss'
   
 model:
   embedding_size: 64

@@ -147,16 +147,23 @@ def run():
     seq2seq = seq2seq.to(device)
 
     # get optimizer
-    # TODO params of all stuffs
     optimizer = optim.Adam(seq2seq.parameters(), lr=lr)
 
-    # train
+    # learning rate scheduler
+    scheduler_config = config['training']['scheduler']
+    scheduler = None
+    if scheduler_config:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                         factor=scheduler_config['factor'],
+                                                         patience=scheduler_config['patience'],
+                                                         verbose=True)
+
     print("\nStart training")
     train_step = 0
     best_validation_loss = float('inf')
     for epoch in range(n_epochs):
+        # train
         seq2seq.train()
-
         logger.reset()
         with tqdm(dl_train) as pbar:
             for data in pbar:
@@ -199,19 +206,30 @@ def run():
                 logger.add_step(loss.item(), accuracy.item(), batch_size)
 
                 train_step += batch_size
-
         logger.end_epoch()
-
         sys.stdout.flush()
+
+        # validate
         evaluate(seq2seq, dl_valid, device, epoch, logger_val)
-        validation_loss = logger_val.epoch_loss
+        current_val_loss = logger_val.epoch_loss
+        mv_avg_val_loss = logger_val.mv_avg_epoch_loss
+
+        if scheduler:
+            if scheduler_config['target'] == 'current_loss':
+                scheduler.step(current_val_loss)
+            elif scheduler_config['target'] == 'mv_avg_loss':
+                scheduler.step(mv_avg_val_loss)
+            else:
+                raise ValueError
+
         new_best = False
-        if best_validation_loss > validation_loss:
-            best_validation_loss = validation_loss
+        if best_validation_loss > current_val_loss:
+            best_validation_loss = current_val_loss
             new_best = True
             # save network
             torch.save(seq2seq.state_dict(), logdir / "state_dict.pth")
 
+        # log statistics
         print("  train     :", logger.to_str())
         print("  validation:", logger_val.to_str(), "*new best*" if new_best else "")
         logger.log("train", train_step)
