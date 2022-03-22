@@ -2,7 +2,7 @@ logdir: "./experiments/ptr/test_config"
 
 training:
   datadir: "./data/TextWorldACP/test"
-  batch_size: 128
+  batch_size: 2
   num_workers: 0
   epochs: 1000
   lr: 0.001

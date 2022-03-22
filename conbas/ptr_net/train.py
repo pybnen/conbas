@@ -97,11 +97,6 @@ def parse_args():
     parser = ArgumentParser(description="Train pointer network")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
-    # parser.add_argument("-bs", "--batch_size", type=int, default=12)
-    # parser.add_argument("-nw", "--num_workers", type=int, default=0)
-    # parser.add_argument("--logdir", help="log directory", required=True)
-    # parser.add_argument("dataset_dir", help="directory to dataset")
-
     return parser.parse_args()
 
 
@@ -158,6 +153,7 @@ def run():
     # train
     print("\nStart training")
     train_step = 0
+    best_validation_loss = float('inf')
     for epoch in range(n_epochs):
         seq2seq.train()
 
@@ -203,13 +199,21 @@ def run():
                 logger.add_step(loss.item(), accuracy.item(), batch_size)
 
                 train_step += batch_size
+
         logger.end_epoch()
 
         sys.stdout.flush()
         evaluate(seq2seq, dl_valid, device, epoch, logger_val)
+        validation_loss = logger_val.epoch_loss
+        new_best = False
+        if best_validation_loss > validation_loss:
+            best_validation_loss = validation_loss
+            new_best = True
+            # save network
+            torch.save(seq2seq.state_dict(), logdir / "state_dict.pth")
 
         print("  train     :", logger.to_str())
-        print("  validation:", logger_val.to_str())
+        print("  validation:", logger_val.to_str(), "*new best*" if new_best else "")
         logger.log("train", train_step)
         logger_val.log("valid", train_step)
 
