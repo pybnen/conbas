@@ -6,7 +6,7 @@ import numpy as np
 class Logger(object):
 
     def __init__(self, writer):
-        maxlen = 100
+        maxlen = 10
 
         self.writer = writer
         self.reset()

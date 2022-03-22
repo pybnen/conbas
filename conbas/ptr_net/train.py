@@ -124,6 +124,10 @@ def run():
         return
     logdir.mkdir(parents=True)
 
+    # copy config file
+    with open(logdir / "config.yaml", "w") as fp:
+        fp.write(yaml.dump(config))
+
     writer = SummaryWriter(log_dir=logdir)
     logger = Logger(writer)
     logger_val = Logger(writer)
