@@ -13,6 +13,7 @@ from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 import yaml
 from functools import reduce
+import shutil
 
 from data import get_dataloader
 from model import Seq2Seq
@@ -124,6 +125,7 @@ def set_rng_seed(seed: int):
 def parse_args():
     parser = ArgumentParser(description="Train pointer network")
     parser.add_argument("--config", type=str, required=True)
+    parser.add_argument("-o", "--overwrite", action="store_true", default=False, help="Overwrite log file")
     parser.add_argument("-s", "--seed", type=int, default=2_183_154_691)
     return parser.parse_args()
 
@@ -143,9 +145,14 @@ def run():
     # logger
     logdir = Path(config['logdir'])
     if logdir.exists():
-        print(f"Logdir already exists: '{config['logdir']}'")
-        return
-    logdir.mkdir(parents=True)
+        if args.overwrite:
+            print(f"Overwrite logdir '{config['logdir']}'")
+            shutil.rmtree(logdir)
+        else:
+            print(f"Logdir already exists: '{config['logdir']}'")
+            return
+
+    logdir.mkdir(parents=True, exist_ok=False)
 
     # copy config file
     with open(logdir / "config.yaml", "w") as fp:
