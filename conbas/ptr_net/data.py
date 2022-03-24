@@ -14,7 +14,7 @@ import json
 
 PAD_TOKEN = "[PAD]"
 SOS_TOKEN = "[SOS]"
-EOS_TOKEN = "[EOS]"
+EOS_TOKEN = "eos"
 
 PAD_TOKEN_ID = 0
 SOS_TOKEN_ID = 1

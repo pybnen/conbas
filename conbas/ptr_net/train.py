@@ -28,6 +28,44 @@ torch.backends.cudnn.benchmark = False
 #     print(e)
 
 
+def calc_metrics(inputs, targets, cmd_lengths):
+    batch_size = inputs.size(0)
+
+    f1 = 0.0
+    set_accuracy = 0.0
+    precision = 0.0
+    recall = 0.0
+    for i in range(batch_size):
+        input_set = set(inputs[i].tolist())
+        target_set = set(targets[i].tolist())
+        cmd_set = set(range(cmd_lengths[i]))
+
+        # remove EOF idx
+        if 0 in input_set:
+            input_set.remove(0)
+        if 0 in target_set:
+            target_set.remove(0)
+        if 0 in cmd_set:
+            cmd_set.remove(0)
+
+        true_positive = target_set.intersection(input_set)
+        false_positive = input_set.difference(target_set)
+
+        true_negative = cmd_set.difference(target_set.union(input_set))
+        false_negative = target_set.difference(input_set)
+
+        f1 += 2 * len(true_positive) / (len(target_set) + len(input_set))
+        set_accuracy += (len(true_positive) + len(true_negative)) / len(cmd_set)
+        # add 1e-5 in denominator to avoid div by 0
+        precision += len(true_positive) / (len(true_positive) + len(false_positive) + 1e-5)
+        recall += len(true_positive) / (len(true_positive) + len(false_negative))
+
+    return f1 / batch_size, \
+        set_accuracy / batch_size, \
+        precision / batch_size, \
+        recall / batch_size
+
+
 @torch.no_grad()
 def evaluate(seq2seq, dl_valid, device, logger):
     seq2seq.eval()
@@ -66,7 +104,12 @@ def evaluate(seq2seq, dl_valid, device, logger):
         mask = ((indices_flatt + admissible_cmds_flatt) > 0).float()
         accuracy = torch.sum((indices_flatt == admissible_cmds_flatt).float() * mask) / mask.sum()
 
-        logger.add_step(loss.item(), accuracy.item(), batch_size)
+        f1, set_accuracy, precision, recall = calc_metrics(indices.detach().cpu(),
+                                                           admissible_cmds.detach().cpu(),
+                                                           [len(c) for c in commands])
+
+        logger.add_step(loss.item(), accuracy.item(), f1,
+                        set_accuracy, precision, recall, batch_size)
 
     logger.end_epoch()
 
@@ -237,8 +280,13 @@ def run():
                 mask = ((indices_flatt + admissible_cmds_flatt) > 0).float()
                 accuracy = torch.sum((indices_flatt == admissible_cmds_flatt).float() * mask) / mask.sum()
 
+                f1, set_accuracy, precision, recall = calc_metrics(indices.detach().cpu(),
+                                                                   admissible_cmds.detach().cpu(),
+                                                                   [len(c) for c in commands])
+
                 batch_size = states.size(0)
-                logger.add_step(loss.item(), accuracy.item(), batch_size)
+                logger.add_step(loss.item(), accuracy.item(), f1, set_accuracy,
+                                precision, recall, batch_size)
 
                 train_step += batch_size
         logger.end_epoch()
@@ -267,7 +315,7 @@ def run():
         # log examples
         if epoch % config['log_example_interval'] == 0:
             example_str = get_example(seq2seq, dl_valid, device)
-            with open(logdir / "examplex.txt", "a") as fp:
+            with open(logdir / "examples.txt", "a") as fp:
                 fp.write(f"Epoch {epoch}\n{example_str}\n")
 
         # log statistics
