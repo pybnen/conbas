@@ -138,22 +138,14 @@ def get_example(seq2seq, dl, device):
     commands_arr = [dl.dataset.vocab.to_sentence(c[cm.bool()].tolist())
                     for c, cm in zip(commands[sample_idx], commands_mask[sample_idx])]
 
-    labels = [commands_arr[i] for i in admissible_cmds.cpu()[sample_idx, :].tolist() if i != 0]
-    predictions = [commands_arr[i] for i in indices.cpu()[sample_idx, :].tolist() if i != 0]
+    labels = set([commands_arr[i] for i in admissible_cmds.cpu()[sample_idx, :].tolist() if i != 0])
+    predictions = set([commands_arr[i] for i in indices.cpu()[sample_idx, :].tolist() if i != 0])
 
-    example_str = f"{ob}\n"
-    max_label_len = reduce(lambda a, b: max(a, len(b)), labels, 0) + 1
+    example_str =  f"Observation:  {ob}\n"
+    example_str += f"Correct (TP): {labels.intersection(predictions)}\n"
+    example_str += f"Missing (FN): {labels.difference(predictions)}\n"
+    example_str += f"False   (FP): {predictions.difference(labels)}\n"
 
-    max_len = max(len(labels), len(predictions))
-    labels += ["-"] * (max_len - len(labels))
-    predictions += ["-"] * (max_len - len(predictions))
-
-    for label, prediction in zip(labels, predictions):
-        tab = ' ' * (max_label_len - len(label))
-        if label == prediction:
-            example_str += f"{label}{tab}<-- *correct*\n"
-        else:
-            example_str += f"{label}{tab}{prediction}\n"
     return example_str
 
 
