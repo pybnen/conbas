@@ -1,0 +1,18 @@
+logdir: "./experiments/admac/test_config"
+log_example_interval: 10
+
+training:
+  datadir: "./data/TextWorldACP/test"
+  batch_size: 128
+  num_workers: 0
+  epochs: 1000
+  lr: 0.001
+  scheduler:
+    factor: 0.5
+    patience: 10
+    target: 'current_loss'
+  
+model:
+  embedding_size: 64
+  rnn_hidden_size: 64
+  classifier_hidden_sizes: [64]
