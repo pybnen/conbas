@@ -183,7 +183,8 @@ def main():
 
     print("\nStart training")
     train_step = 0
-    best_validation_loss = float('inf')
+    best_val_loss = float('inf')
+    best_val_accuracy = float('-inf')
     for epoch in range(n_epochs):
         # train
         model.train()
@@ -220,6 +221,7 @@ def main():
         # validate
         evaluate(model, dl_valid, device, logger_val)
         current_val_loss = logger_val.epoch_loss
+        current_val_accuracy = logger_val.epoch_accuracy
         mv_avg_val_loss = logger_val.mv_avg_epoch_loss
 
         if scheduler:
@@ -230,12 +232,18 @@ def main():
             else:
                 raise ValueError
 
-        new_best = False
-        if best_validation_loss > current_val_loss:
-            best_validation_loss = current_val_loss
-            new_best = True
+        str_best = ""
+        if best_val_loss > current_val_loss:
+            best_val_loss = current_val_loss
+            str_best = "*new best loss* "
             # save network
-            torch.save(model.state_dict(), logdir / "state_dict.pth")
+            torch.save(model.state_dict(), logdir / "best_loss_state_dict.pth")
+
+        if best_val_accuracy < current_val_accuracy:
+            best_val_accuracy = current_val_accuracy
+            str_best += "*new best accuracy*"
+            # save network
+            torch.save(model.state_dict(), logdir / "best_accuracy_state_dict.pth")
 
         # log examples
         if epoch % config['log_example_interval'] == 0:
@@ -246,7 +254,7 @@ def main():
 
         # log statistics
         print("  train     :", logger.to_str())
-        print("  validation:", logger_val.to_str(), "*new best*" if new_best else "")
+        print("  validation:", logger_val.to_str(), str_best)
         logger.log("train", train_step)
         logger_val.log("valid", train_step)
 
