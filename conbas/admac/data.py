@@ -164,7 +164,7 @@ def create_batch(data):
         torch.tensor(admissible_batch).float()
 
 
-def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
+def get_dataloader(directory, batch_size, tokenizer, num_workers, seed, testset=False):
     def seed_worker(worker_id):
         worker_seed = torch.initial_seed() % 2**32
         np.random.seed(worker_seed)
@@ -183,4 +183,10 @@ def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
     dl_valid = DataLoader(ds_valid, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                           collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
-    return dl_train, dl_valid, vocab
+    dl_test = None
+    if testset:
+        ds_test = GameStateDataset(directory + "/test.txt", tokenizer, vocab)
+        dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                             collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
+
+    return dl_train, dl_valid, vocab, dl_test

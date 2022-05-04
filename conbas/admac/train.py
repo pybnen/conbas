@@ -150,7 +150,7 @@ def main():
 
     # get dataloader
     print("Load dataset")
-    dl_train, dl_valid, vocab = \
+    dl_train, dl_valid, vocab, _ = \
         get_dataloader(config['training']['datadir'],
                        config['training']['batch_size'],
                        tokenizer=word_tokenize,
