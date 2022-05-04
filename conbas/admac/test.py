@@ -19,7 +19,7 @@ import sklearn.metrics
 import csv
 import datetime
 
-from data import get_dataloader
+from data import get_testset_loader, Vocabulary
 from model import ADMAC
 from logger import Logger
 
@@ -73,13 +73,14 @@ def main():
 
     # get dataloader
     print("Load dataset")
-    _, _, vocab, dl_test = \
-        get_dataloader(config['test']['datadir'],
-                       config['test']['batch_size'],
-                       tokenizer=word_tokenize,
-                       num_workers=config['test']['num_workers'],
-                       seed=args.seed,
-                       testset=True)
+    vocab = Vocabulary.deserialize(logdir / config['vocab'])
+    dl_test = \
+        get_testset_loader(config['test']['datadir'],
+                           vocab,
+                           config['test']['batch_size'],
+                           tokenizer=word_tokenize,
+                           num_workers=config['test']['num_workers'],
+                           seed=args.seed)
     vocab_size = len(vocab)
 
     # get device
@@ -93,7 +94,7 @@ def main():
     model = ADMAC(vocab_size, embedding_size, rnn_hidden_size, classifier_hidden_sizes, vocab.word_2_id("[PAD]"))
     model = model.to(device)
 
-    state_dict = torch.load(config['state_dict'], map_location=device)
+    state_dict = torch.load(logdir / config['state_dict'], map_location=device)
     model.load_state_dict(state_dict)
 
     print("\nStart test")

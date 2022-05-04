@@ -29,6 +29,7 @@ EOS_TOKEN = "eos"
 
 PAD_TOKEN_ID = 0
 SOS_TOKEN_ID = 1
+UNK_TOKEN_ID = 1
 EOS_TOKEN_ID = 2
 
 table = str.maketrans('', '', string.punctuation)
@@ -48,7 +49,8 @@ def pad_sequences(data, pad_length, dtype):
 
 
 class Vocabulary:
-    def __init__(self):
+    def __init__(self, fixed_length=False):
+        self.fixed_length = fixed_length
         self.word2index = {}
         self.word2count = {}
         self.index2word = {PAD_TOKEN_ID: PAD_TOKEN,
@@ -71,8 +73,14 @@ class Vocabulary:
             self.word2count[word] += 1
 
     def word_2_id(self, word):
-        self.add_word(word)
-        return self.word2index[word]
+        if not self.fixed_length:
+            self.add_word(word)
+            return self.word2index[word]
+        else:
+            if word in self.word2index:
+                return self.word2index[word]
+            else:
+                return UNK_TOKEN_ID
 
     def id_2_word(self, id):
         return self.index2word[id]
@@ -83,6 +91,27 @@ class Vocabulary:
     def __len__(self):
         assert (len(self.index2word) == len(self.word2index))
         return len(self.word2index)
+
+    def serialize(self):
+        lines = ""
+        lines += json.dumps(self.word2index) + "\n"
+        lines += json.dumps(self.word2count) + "\n"
+
+        return lines
+
+    @classmethod
+    def deserialize(cls, file):
+        vocab = cls(fixed_length=True)
+
+        with open(file, "r") as fp:
+            lines = fp.readlines()
+            vocab.word2index = json.loads(lines[0])
+            vocab.word2count = json.loads(lines[1])
+            vocab.index2word = {}
+            for word, index in vocab.word2index.items():
+                vocab.index2word[index] = word
+
+        return vocab
 
 
 def preprocess_line(line, tokenizer, vocab: Vocabulary, remove_stopwords=True):
@@ -164,7 +193,7 @@ def create_batch(data):
         torch.tensor(admissible_batch).float()
 
 
-def get_dataloader(directory, batch_size, tokenizer, num_workers, seed, testset=False):
+def get_dataloader(directory, batch_size, tokenizer, num_workers, seed):
     def seed_worker(worker_id):
         worker_seed = torch.initial_seed() % 2**32
         np.random.seed(worker_seed)
@@ -183,10 +212,20 @@ def get_dataloader(directory, batch_size, tokenizer, num_workers, seed, testset=
     dl_valid = DataLoader(ds_valid, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                           collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
 
-    dl_test = None
-    if testset:
-        ds_test = GameStateDataset(directory + "/test.txt", tokenizer, vocab)
-        dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                             collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
+    return dl_train, dl_valid, vocab
 
-    return dl_train, dl_valid, vocab, dl_test
+
+def get_testset_loader(directory, vocab, batch_size, tokenizer, num_workers, seed):
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+
+    g = torch.Generator()
+    g.manual_seed(seed)
+
+    ds_test = GameStateDataset(directory + "/test.txt", tokenizer, vocab)
+    dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=True, num_workers=num_workers,
+                         collate_fn=create_batch, worker_init_fn=seed_worker, generator=g)
+
+    return dl_test

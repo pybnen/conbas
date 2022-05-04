@@ -1,5 +1,6 @@
 logdir: "./experiments/admac/test_config"
-state_dict: "./experiments/admac/test_config/best_loss_state_dict.pth"
+vocab: "vocab.txt"
+state_dict: "best_loss_state_dict.pth"
 
 test:
   datadir: "./data/TextWorldACP/test"
