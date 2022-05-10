@@ -1,4 +1,3 @@
-from sre_parse import State
 from typing import List, Dict, Any, Tuple
 
 import torch
@@ -88,8 +87,9 @@ class ADMAC(nn.Module):
 
 
 class Embedding(nn.Module):
-    def __init__(self, vocab_size, embedding_size, hidden_size, padding_idx):
+    def __init__(self, vocab_size, embedding_size, hidden_size, padding_idx, device):
         super().__init__()
+        self.device = device
         self.embedding = nn.Embedding(vocab_size, embedding_size, padding_idx=padding_idx)
         self.rnn = nn.LSTM(input_size=embedding_size,
                            hidden_size=hidden_size,
@@ -104,6 +104,6 @@ class Embedding(nn.Module):
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=False)
 
         # https://discuss.pytorch.org/t/average-of-the-gru-lstm-outputs-for-variable-length-sequences/57544/4
-        output_lengths_device = output_lengths.float()
+        output_lengths_device = output_lengths.float().to(self.device)
         repr = output_padded.sum(dim=0) / output_lengths_device.unsqueeze(dim=1)
         return repr

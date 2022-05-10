@@ -49,7 +49,8 @@ class AdmacDrqnAgent:
         self.word_vocab = word_vocab
         self.experiment_path = None
         self.lstm_dqn = AdmacDrqn(self.config["model"], commands, word_vocab, self.device).to(self.device)
-        self.admac = ADMAC(state_size=self.config["model"]["representation_rnn"][-1], hidden_sizes=[20, 30, 20])
+        self.admac = \
+            ADMAC(state_size=self.config["model"]["representation_rnn"][-1], hidden_sizes=[128, 64]).to(self.device)
 
         if self.config["training"]["use_target_network"]:
             self.lstm_dqn_target = AdmacDrqn(self.config["model"], commands, word_vocab, self.device).to(self.device)
