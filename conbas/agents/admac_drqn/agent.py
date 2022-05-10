@@ -50,7 +50,7 @@ class AdmacDrqnAgent:
         self.experiment_path = None
         self.lstm_dqn = AdmacDrqn(self.config["model"], commands, word_vocab, self.device).to(self.device)
         self.admac = \
-            ADMAC(state_size=self.config["model"]["representation_rnn"][-1], hidden_sizes=[128, 64]).to(self.device)
+            ADMAC(state_size=self.config["model"]["representation_rnn"][-1], hidden_sizes=self.config["classifier"]["hidden"]).to(self.device)
 
         if self.config["training"]["use_target_network"]:
             self.lstm_dqn_target = AdmacDrqn(self.config["model"], commands, word_vocab, self.device).to(self.device)
@@ -497,6 +497,8 @@ class AdmacDrqnAgent:
                     current_game_step = 0
                     losses = []
                     adm_losses = []
+                    adm_labels = []
+                    adm_accs = []
                     deltas = []
                     grad_norms = []
 
@@ -513,6 +515,10 @@ class AdmacDrqnAgent:
 
                     # extract input information
                     input_ids = self.extract_input(obs, infos, self.prev_commands)
+                    admissible = []
+                    for adm_cmds in infos['admissible_commands']:
+                        admissible.append([int(c in adm_cmds) for c in self.commands])
+
                     h, c = None, None
                     memory_cache = [[] for _ in range(len(obs))]
 
@@ -558,9 +564,9 @@ class AdmacDrqnAgent:
                             # calcualte reward including counting reward
                             rewards = rewards + counting_reward_adj
 
-                        for i, (input_id, command_index, reward, next_input_id, done, finished, reward_wo_cnt) \
+                        for i, (input_id, command_index, reward, next_input_id, done, finished, reward_wo_cnt, adm) \
                                 in enumerate(
-                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, batch_finished, rewards_wo_cnt)):
+                                    zip(input_ids, command_indices, rewards, next_input_ids, dones, batch_finished, rewards_wo_cnt, admissible)):
 
                             # only append transitions from not finished or just recently finished episodes
                             if not_or_recently_finished[i]:
@@ -572,18 +578,23 @@ class AdmacDrqnAgent:
 
                                 # done is True only if env is won/lost, not if step limit is reached
                                 memory_cache[i].append(Transition(input_id, command_index, reward, next_input_id,
-                                                                  done, finished, reward_wo_cnt))
+                                                                  done, finished, reward_wo_cnt, adm[command_index]))
 
                         input_ids = next_input_ids
+                        admissible = []
+                        for adm_cmds in infos['admissible_commands']:
+                            admissible.append([int(c in adm_cmds) for c in self.commands])
 
                         if len(replay_memory) > replay_memory.batch_size and len(replay_memory) >= update_after \
                                 and current_game_step % update_per_k_game_steps == 0:
-                            loss, total_norm, adm_loss, delta = self.update(
+                            loss, total_norm, adm_loss, delta, adm_label, adm_acc = self.update(
                                 discount, replay_memory, loss_fn, optimizer, optimizer_admac, clip_grad_norm)
 
                             # save train statistics
                             losses.append(loss)
                             adm_losses.append(adm_loss)
+                            adm_labels.append(adm_label)
+                            adm_accs.append(adm_acc)
                             deltas.append(delta)
                             grad_norms.append(total_norm)
 
@@ -648,8 +659,14 @@ class AdmacDrqnAgent:
                     self.writer.add_scalar("general/update_step", update_step, global_step=training_steps)
                     self.writer.add_scalar("general/counting_lambda", counting_lambda, global_step=training_steps)
 
-                    self.writer.add_scalar('cur_adm_loss', np.mean(adm_losses), training_steps)
-                    self.writer.add_scalar('delta', np.mean(deltas), training_steps)
+                    if adm_losses:
+                        self.writer.add_scalar('adm_loss', np.mean(adm_losses), training_steps)
+                    if adm_labels:
+                        self.writer.add_scalar('adm_label', np.mean(adm_labels), training_steps)
+                    if adm_accs:
+                        self.writer.add_scalar('adm_acc', np.mean(adm_accs), training_steps)
+                    if deltas:
+                        self.writer.add_scalar('adm_delta', np.mean(deltas), training_steps)
 
                     # replay buffer
                     buffer_sampled_reward_avg.append(replay_memory.stats["sampled_reward"])
@@ -732,6 +749,8 @@ class AdmacDrqnAgent:
         deltas = []
         adm_losses = []
         priorities = []
+        adm_accs = []
+        adm_labels = []
 
         h, c = None, None
         h_target, c_target = None, None        
@@ -781,9 +800,16 @@ class AdmacDrqnAgent:
 
             # optimize admac
             with torch.no_grad():
-                delta = ((state_embed - next_state_embed)**2).mean(dim=-1)
-                deltas.append(delta.detach().mean().cpu().item())
-                admissible = (delta > 0.1).float().detach()
+                gt = torch.tensor(batch.admissible).long()
+                if self.config['classifier']['use_label']:
+                    admissible = torch.tensor(batch.admissible).float().to(self.device)
+                else:
+                    delta = ((state_embed - next_state_embed)**2).mean(dim=-1)
+                    deltas.append(delta.detach().mean().cpu().item())
+                    admissible = (delta > 0.1).float().detach()
+
+                adm_label = np.mean((admissible.long() == gt).int().numpy())
+                adm_labels.append(adm_label)
 
                 # n_cmds, embedding
                 with torch.no_grad():
@@ -793,6 +819,9 @@ class AdmacDrqnAgent:
 
                 adm_loss = F.binary_cross_entropy_with_logits(logits, admissible.reshape(-1, 1))
                 adm_losses.append(adm_loss)
+
+                adm_acc = np.mean((torch.sigmoid(logits.detach().cpu().squeeze(-1)).round().long() == gt).int().numpy())
+                adm_accs.append(adm_acc)
 
             # next q values are current y values
             q_values = next_q_values
@@ -832,7 +861,8 @@ class AdmacDrqnAgent:
         if type(total_norm) == torch.Tensor:
             total_norm = total_norm.detach().cpu().item()
 
-        return loss.detach().cpu().item(), total_norm, adm_loss.detach().cpu().item(), np.mean(deltas)
+        return loss.detach().cpu().item(), total_norm, adm_loss.detach().cpu().item(), np.mean(deltas), \
+            np.mean(adm_labels), np.mean(adm_accs)
 
     def update_target_model(self, tau: float):
         """Performs soft update of target network

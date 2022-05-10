@@ -13,6 +13,7 @@ class Transition(NamedTuple):
     done: bool
     is_final: bool
     reward_wo_cnt: float
+    admissible: int
 
 
 class TransitionBatch(NamedTuple):
@@ -23,6 +24,7 @@ class TransitionBatch(NamedTuple):
     done: List[bool]
     is_final: List[bool]
     reward_wo_cnt: List[float]
+    admissible: List[int]
 
 
 class Memory:

@@ -57,6 +57,10 @@ model:
   command_scorer_rnn_hidden: 64
   command_scorer_linear: [64]
 
+classifier:
+  use_label: True
+  hidden: [128, 64]
+
 checkpoint:
   on_exist: "delete"
   experiments_path: "experiments/admac_drqn/"

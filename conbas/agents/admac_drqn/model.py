@@ -17,7 +17,7 @@ class AdmacDrqn(nn.Module):
         self.representation_hidden_size = config['representation_rnn']
         self.command_scorer_rnn_hidden = config['command_scorer_rnn_hidden']
 
-        self.embedding = Embedding(len(word_vocab), self.embedding_size, self.representation_hidden_size[0], 0)
+        self.embedding = Embedding(len(word_vocab), self.embedding_size, self.representation_hidden_size[0], 0, self.device)
 
         # define command scorer rnn
         self.command_scorer_rnn = nn.LSTMCell(input_size=self.representation_hidden_size[-1],
