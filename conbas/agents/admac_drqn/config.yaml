@@ -1,0 +1,65 @@
+general:
+  use_cuda: true
+  game_files: ["data/SaladWorld/level_1.ulx"]
+  commands_files: ["data/SaladWorld/level_1_cmd.txt"]
+  vocab_file: "data/SaladWorld/vocab.txt"
+  eps_annealed_args:
+    upper_bound: 1.0
+    lower_bound: 0.2
+    duration: 750_000
+
+  # counting reward
+  counting_reward:
+    type: false # (false, episodic, cumulative)
+    lambda_annealed_args:
+      init_temp: 1.0
+      min_temp: 1.0
+      decay: 1
+    beta: 1.0
+
+training:
+  traning_steps: 1_200_000
+  batch_size: 10
+  max_steps_per_episode: 50
+  loss_fn: "smooth_l1"  # ('smooth_l1', 'mse')
+  use_target_network: true
+  use_double_DQN: true
+
+  replay_buffer:
+    type: 'seq' # ('my', 'cc', 'seq')
+    priority: 'loss' # ('loss', 'td_error')
+    solved_is_prior: False # cc default: False
+    batch_size: 32
+    capacity: 500_000
+    alpha: 0.6    
+    beta_annealed_args:
+      upper_bound: 1.0
+      lower_bound: 0.4
+      duration: 500_000
+    history_size: 8
+    bootstrap_state: 4
+    update_from: 4
+
+  update_after: 0
+  update_per_k_game_steps: 4
+  target_update_tau: 0.001
+  target_update_interval: 5
+  discount: 0.9
+  
+  optimizer:
+    lr: 0.001
+    clip_grad_norm: 5
+
+model:
+  type: 'lstm' # (gru, lstm, fast_lstm)
+  embedding_size: 20  
+  representation_rnn: [100]
+  command_scorer_rnn_hidden: 64
+  command_scorer_linear: [64]
+
+checkpoint:
+  on_exist: "delete"
+  experiments_path: "experiments/admac_drqn/"
+  experiment_tag: "s120"
+  experiment_description: "lvl 1, 120 steps"
+  save_frequency: 100_000
